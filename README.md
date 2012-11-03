@@ -18,3 +18,8 @@ HowTo:
 4. Drag-and-Drop videos or folders on 'ltv-downloader.py'
 
 5. Enjoy!
+
+
+Description:
+------------
+
