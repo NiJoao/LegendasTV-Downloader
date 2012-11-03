@@ -25,7 +25,7 @@ recursive_folders = False
 
 # Rename and clean videos and accompanying files from this garbage-tags 
 clean_original_filename = True
-clean_name_from = ['VTV', 'DS', 'Unrated', 'www.torentz.3xforum.ro']
+clean_name_from = ['VTV', 'www.torentz.3xforum.ro']
 
 # No need to change those, but feel free to add/remove some
 valid_subtitle_extensions = ['srt','aas','ssa','sub','smi']
@@ -34,7 +34,7 @@ valid_extension_modifiers = ['!ut', 'part']
 
 known_release_groups = ['lol', '2hd', 'ASAP', 'fever', 'fqm', 'p0w4', 'fov', 'tla', 'refill', 'notv', 'reward', 'bia', 'maxspeed']
 
-Debug = 2    
+Debug = 2
 
 ####### End of user configurations #######
 
