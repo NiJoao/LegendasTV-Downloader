@@ -73,8 +73,9 @@ If you need explanation on these, press alt-f4
 
 ##### default_folder
 
-default folder analyzed when no argument is given (user double-clicked ltv-downloader.py)
-* default: '.'   # local folder where the script or shortcut was run from
+Default folder analyzed when no argument is given (user double-clicked ltv-downloader.py)
+A '.' means the current working dir, the local folder where the script or shortcut was run from
+* default: '.'
 
 ##### preferred_languages
 
