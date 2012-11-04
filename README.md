@@ -3,8 +3,11 @@ LegendasTV-Downloader
 
 Single-file script that scans a folder for videos and downloads subtitles for all of them from legendas.tv
 
+NO user input needed, totally automatic.
+
 Works great for TV-Shows, but gets unsynced subtitles for some movies, depending on naming schemes on both the file and legendas.tv website.
 
+Please, use the **issues** tab to make suggestions and file bugs.
 
 ## Quick HowTo:
 
