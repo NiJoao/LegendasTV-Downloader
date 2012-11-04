@@ -816,7 +816,7 @@ if __name__ == '__main__':
         print 'Searching for: \n\
         Title: %s\n\
         SubTitle: %s\n\
-        year: %d\n\
+        year: %s\n\
         season: %s\n\
         episode: %s\n\
         wanted_languages: %s\n\
