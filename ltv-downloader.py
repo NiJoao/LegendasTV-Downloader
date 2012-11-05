@@ -81,6 +81,12 @@ def CreateSymLink(source, link_name):
         raise ctypes.WinError()
 os.symlink = CreateSymLink
 
+def SameFile(file1, file2):
+    try:
+        return os.stat(file1) == os.stat(file2)
+    except:
+        return False
+os.path.samefile = SameFile
 
 class LegendasTV:
     class SearchLang:
@@ -113,7 +119,7 @@ class LegendasTV:
         login_data = urllib.urlencode({'txtLogin':self.username,'txtSenha':self.password,'chkLogin':0})
         request = urllib2.Request(self.base_url+'/login_verificar.php',login_data)
         try:
-            self.response = urllib2.urlopen(request).read()
+            self.response = urllib2.urlopen(request, timeout=5).read()
         except HTTPError, e:
             print e.code
         except URLError, e:
@@ -122,7 +128,7 @@ class LegendasTV:
     def logout(self):
         request = urllib2.Request(self.base_url+'/logoff.php')
         try:
-            self.response = urllib2.urlopen(request)
+            self.response = urllib2.urlopen(request, timeout=5)
         except HTTPError, e:
             print e.code
         except URLError, e:
@@ -157,7 +163,7 @@ class LegendasTV:
             print "Searching for subtitles with: "+vsearch
     
             request = urllib2.Request(self.base_url+'/index.php?opcao=buscarlegenda',search_data)
-            response = urllib2.urlopen(request)
+            response = urllib2.urlopen(request, timeout=10)
             page = response.read()
     
             soup = BeautifulSoup(page)
@@ -314,7 +320,7 @@ class LegendasTV:
             
             print 'Downloading %s, %s' % (subtitle['language'], subtitle['release'])
             request =  urllib2.Request(url_request)
-            response = urllib2.urlopen(request)
+            response = urllib2.urlopen(request, timeout=10)
             legenda = response.read()
 
             self.archivename = os.path.join(self.download_path, str(download_id))
@@ -556,10 +562,15 @@ def createLinkSameName(Folder, Movie, Destination, HardLink=True):
 
     Movie = os.path.basename(Movie)
     Destination = os.path.basename(Destination)
+    fullDestination = os.path.join(Folder, Destination)
 
     linkName = os.path.splitext(Movie)[0] + os.path.splitext(Destination)[1]
     fullLinkName = os.path.join(Folder, linkName)
-
+    
+    if os.path.samefile(fullDestination, fullLinkName):
+        print 'Link without language already exists'
+        return
+    
     try:
         os.remove(fullLinkName)
     except Exception:
@@ -680,32 +691,47 @@ if __name__ == '__main__':
         # Remove garbage of movie name and accompanying files
         if clean_original_filename:
             originalFilename = cleanAndRenameFile(dirpath, originalFilename)
-
+        
+        existSubs=''
+        existLangSubs=''
+        # Escape square brackets in filenames, Glob's fault...
+        tmp = os.path.splitext(os.path.join(dirpath, originalFilename))[0] + '.s*'
+        for subFound in glob.glob(re.sub(r'(?<!\[)\]', '[]]', re.sub(r'\[', '[[]', tmp))):
+            existSubs = subFound
+            break
+        
         wanted_languages = preferred_languages[:]
         
-        # check already existing subtitles to avoid re-download
-        for idx, lang in reversed(list(enumerate(wanted_languages))):
-            if append_language:
+        if append_language:
+            # check already existing subtitles to avoid re-download
+            for idx, lang in reversed(list(enumerate(wanted_languages))):
                 tmp = os.path.splitext(os.path.join(dirpath, originalFilename))[0] + '.'+lang+'.s*'
+                for existLangSubs in glob.glob(re.sub(r'(?<!\[)\]', '[]]', re.sub(r'\[', '[[]', tmp))):
+                    print 'Found a \'%s\' subtitle: %s' % (lang, existLangSubs) 
+                    if idx==0:
+                        wanted_languages = []
+                    else:
+                        wanted_languages = wanted_languages[0:idx]
+                        
+        if existSubs and not os.path.samefile(existSubs, existLangSubs):
+            statistics['Best'] += 1
+            print 'Found existing subtitle: %s' % (lang, existSubs) 
+            if len(input_string) == 1:
+                print 'Single argument: Forcing search'
             else:
-                tmp = os.path.splitext(os.path.join(dirpath, originalFilename))[0] + '.s*'
-            # Escape square brackets in filenames, Glob's fault...
-            glob_pattern = re.sub(r'(?<!\[)\]', '[]]', re.sub(r'\[', '[[]', tmp))
-            for subFound in glob.glob(glob_pattern):
-                print 'Found existing \'%s\' subtitle: %s' % (lang, subFound) 
-                if idx==0:
-                    wanted_languages = []
-                else:
-                    wanted_languages = wanted_languages[0:idx]
-
-        ## Create symlink with the same name as the video, for some players that don't support multiple languages
-        if hardlink_without_lang_to_best_sub and (len(wanted_languages) != len(preferred_languages)) and append_language:
-            createLinkSameName(Folder=dirpath, Movie=originalFilename, Destination=subFound)
-
+                continue
+        
+            ## Create symlink with the same name as the video, for some players that don't support multiple languages
+        if append_language and hardlink_without_lang_to_best_sub and (len(wanted_languages) != len(preferred_languages)):
+            createLinkSameName(Folder=dirpath, Movie=originalFilename, Destination=existLangSubs)
+    
         if len(wanted_languages) == 0:
             statistics['Best'] += 1
             print 'Best subtitles already present'
-            continue
+            if len(input_string) == 1:
+                print 'Single argument: Forcing search'
+            else:
+                continue
 
 
         # Start analyzis per-se
