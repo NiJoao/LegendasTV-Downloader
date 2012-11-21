@@ -32,7 +32,7 @@ valid_subtitle_extensions = ['srt','aas','ssa','sub','smi']
 valid_video_extensions = ['avi', 'mkv', 'mp4', 'wmv', 'mov', 'mpg', 'mpeg', '3gp', 'flv']
 valid_extension_modifiers = ['!ut', 'part']
 
-known_release_groups = ['lol', '2hd', 'ASAP', 'fever', 'fqm', 'p0w4', 'fov', 'tla', 'refill', 'notv', 'reward', 'bia', 'maxspeed']
+known_release_groups = ['LOL', '2HD', 'ASAP', 'fever', 'FQM', 'p0w4', 'FoV', 'TLA', 'refill', 'notv', 'reward', 'bia', 'maxspeed']
 
 Debug = 2
 
