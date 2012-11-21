@@ -1495,9 +1495,8 @@ def cleanAndRenameFile(Folder, filename):
     # Cleaning subtitles and other files
     glob_pattern = re.sub(r'(?<!\[)\]', '[]]', re.sub(r'\[', '[[]', os.path.splitext(fullFilename)[0]+'.*'))
     for tmpFile in glob.glob(glob_pattern):
-        f = os.path.basename(full)
         tmpNew = statementClean.sub('\\1', tmpFile)
-        if n == f:
+        if tmpNew == tmpFile:
             print 'Error cleaning this name: %s' % (tmpFile)
         else:
             print 'Found and removing %s in %s' % (regex, tmpFile)
