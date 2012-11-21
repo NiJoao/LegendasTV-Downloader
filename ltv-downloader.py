@@ -43,6 +43,7 @@ Debug = 2
 import cookielib, urllib2, urllib
 import re, os, sys, tempfile, traceback, shutil, getpass
 import glob
+from msvcrt import getch
 from zipfile import ZipFile
 from time import sleep
 from urllib2 import HTTPError, URLError
@@ -50,12 +51,16 @@ try:
     from bs4 import BeautifulSoup
 except ImportError:
     print 'Python module needed: BeautifulSoup4 / bs4'
+    print '\nPress any key to exit...'
+    junk = getch()
     sys.exit()
     
 try:
     from rarfile import RarFile
 except ImportError:
     print 'Python module needed: rarfile'
+    print '\nPress any key to exit...'
+    junk = getch()
     sys.exit()
 
 def CreateHardLink(source, link_name):
@@ -119,20 +124,28 @@ class LegendasTV:
         login_data = urllib.urlencode({'txtLogin':self.username,'txtSenha':self.password,'chkLogin':0})
         request = urllib2.Request(self.base_url+'/login_verificar.php',login_data)
         try:
-            self.response = urllib2.urlopen(request, timeout=5).read()
-        except HTTPError, e:
-            print e.code
-        except URLError, e:
-            print e.reason
+            response = urllib2.urlopen(request, timeout=10).read()
+        except:
+            print 'login timedout, retrying'
+            try:
+                response = urllib2.urlopen(request, timeout=10).read()
+            except:
+                print '! Error, login timeout?'
+                return False
+
+        if 'Dados incorretos' in response:
+            print '! Error, wrong login info...'
+            return False
+
+        return True
 
     def logout(self):
         request = urllib2.Request(self.base_url+'/logoff.php')
         try:
-            self.response = urllib2.urlopen(request, timeout=5)
-        except HTTPError, e:
-            print e.code
-        except URLError, e:
-            print e.reason
+            response = urllib2.urlopen(request, timeout=5)
+        except:
+            return False
+        return True
     
     def search(self, videoTitle, videoSubTitle, year, season, episode, group, size, quality):
 
@@ -163,7 +176,16 @@ class LegendasTV:
             print "Searching for subtitles with: "+vsearch
     
             request = urllib2.Request(self.base_url+'/index.php?opcao=buscarlegenda',search_data)
-            response = urllib2.urlopen(request, timeout=10)
+            try:
+                response = urllib2.urlopen(request, timeout=15)
+            except:
+                print "Search timedout, retrying"
+                try:
+                    response = urllib2.urlopen(request, timeout=15)
+                except:
+                    print "! Error, searching timedout"
+                    return False
+
             page = response.read()
     
             soup = BeautifulSoup(page)
@@ -320,7 +342,16 @@ class LegendasTV:
             
             print 'Downloading %s, %s' % (subtitle['language'], subtitle['release'])
             request =  urllib2.Request(url_request)
-            response = urllib2.urlopen(request, timeout=10)
+            try:
+                response = urllib2.urlopen(request, timeout=20)
+            except:
+                print "Download timedout, retrying"
+                try:
+                    response = urllib2.urlopen(request, timeout=20)
+                except:
+                    print "! Error, download timedout"
+                    return False
+                
             legenda = response.read()
 
             self.archivename = os.path.join(self.download_path, str(download_id))
@@ -490,7 +521,7 @@ class LegendasTV:
                         statistics['EN'] += 1
                     if not wanted_languages == preferred_languages:
                         statistics['Upg'] += 1
-                        continue
+                
                 except Exception:
                     print '! Error, decrompressing!'
                     statistics['Failed'] += 1
@@ -616,10 +647,9 @@ if __name__ == '__main__':
 
     # Logging in Legendas.TV
     ltv = LegendasTV(ltv_username, ltv_password)
-    ltv.login()
-
-    if 'Dados incorretos' in ltv.response:
-        print '! Error, wrong login info...'
+    if not ltv.login():
+        print '\nPress any key to exit...'
+        junk = getch()
         sys.exit()
 
     print '-------------------'
@@ -715,7 +745,7 @@ if __name__ == '__main__':
                         
         if existSubs and not os.path.samefile(existSubs, existLangSubs):
             statistics['Best'] += 1
-            print 'Found existing subtitle: %s' % (lang, existSubs) 
+            print 'Found existing subtitle: %s' % (existSubs) 
             if len(input_string) == 1:
                 print 'Single argument: Forcing search'
             else:
@@ -887,5 +917,6 @@ if __name__ == '__main__':
     print 'Failed!!!! %d, Errors: %d' % (statistics['Failed'], statistics['Errors'] )
 
     print
-    raw_input('Done...')
+    print '\nPress any key to exit...'
+    junk = getch()
 #    sleep(3)

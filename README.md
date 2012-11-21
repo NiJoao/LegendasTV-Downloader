@@ -33,7 +33,7 @@ Many configurations are available for the user to choose, as explained in the *C
 The default settings are suited to my case and library.
 I recommend you to look at the default settings below.
 
-**Carefull** with default settings, it stores the downloaded subtitles with the language code appended (e.g. \*.br.srt),
+With default settings, it stores the downloaded subtitles with the language code appended (e.g. \*.br.srt),
 and **will delete already existing subtitles** that don't have the language code!
 (Actually, it replaces them with a hardlink to the best language available.)
 
