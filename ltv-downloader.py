@@ -43,10 +43,47 @@ Debug = 2
 import cookielib, urllib2, urllib
 import re, os, sys, tempfile, traceback, shutil, getpass
 import glob
-from msvcrt import getch
 from zipfile import ZipFile
 from time import sleep
 from urllib2 import HTTPError, URLError
+try:
+    from msvcrt import getch
+
+    def CreateHardLink(source, link_name):
+        import ctypes
+        ch1 = ctypes.windll.kernel32.CreateHardLinkW
+        ch1.argtypes = (ctypes.c_wchar_p, ctypes.c_wchar_p, ctypes.c_uint32)
+        ch1.restype = ctypes.c_ubyte
+        if not ch1(link_name, os.path.join(os.path.dirname(link_name),os.path.basename(source)), 0):
+            print '%s --> %s' % ( link_name, os.path.join(os.path.dirname(link_name),os.path.basename(source)) )
+            raise ctypes.WinError()
+    os.link = CreateHardLink
+    
+    def CreateSymLink(source, link_name):
+        import ctypes
+        csl = ctypes.windll.kernel32.CreateSymbolicLinkW
+        csl.argtypes = (ctypes.c_wchar_p, ctypes.c_wchar_p, ctypes.c_uint32)
+        csl.restype = ctypes.c_ubyte
+        flags = 0
+        if source is not None and os.path.isdir(source):
+            flags = 1
+        if not csl(link_name, source, flags):
+            print '%s --> %s' % (link_name, source)
+            raise ctypes.WinError()
+    os.symlink = CreateSymLink
+
+except ImportError:
+    print 'NotWindows'
+    
+try:
+    import sys, tty, termios
+except ImportError:
+    print 'NotUnix'
+    fd = sys.stdin.fileno()
+    old_settings = termios.tcgetattr(fd)
+    tty.setraw(sys.stdin.fileno())
+    getch = sys.stdin.read(1)
+
 try:
     from bs4 import BeautifulSoup
 except ImportError:
@@ -63,35 +100,14 @@ except ImportError:
     junk = getch()
     sys.exit()
 
-def CreateHardLink(source, link_name):
-    import ctypes
-    ch1 = ctypes.windll.kernel32.CreateHardLinkW
-    ch1.argtypes = (ctypes.c_wchar_p, ctypes.c_wchar_p, ctypes.c_uint32)
-    ch1.restype = ctypes.c_ubyte
-    if not ch1(link_name, os.path.join(os.path.dirname(link_name),os.path.basename(source)), 0):
-        print '%s --> %s' % ( link_name, os.path.join(os.path.dirname(link_name),os.path.basename(source)) )
-        raise ctypes.WinError()
-os.link = CreateHardLink
-
-def CreateSymLink(source, link_name):
-    import ctypes
-    csl = ctypes.windll.kernel32.CreateSymbolicLinkW
-    csl.argtypes = (ctypes.c_wchar_p, ctypes.c_wchar_p, ctypes.c_uint32)
-    csl.restype = ctypes.c_ubyte
-    flags = 0
-    if source is not None and os.path.isdir(source):
-        flags = 1
-    if not csl(link_name, source, flags):
-        print '%s --> %s' % (link_name, source)
-        raise ctypes.WinError()
-os.symlink = CreateSymLink
-
 def SameFile(file1, file2):
     try:
         return os.stat(file1) == os.stat(file2)
     except:
         return False
 os.path.samefile = SameFile
+
+
 
 class LegendasTV:
     class SearchLang:
