@@ -25,7 +25,7 @@ recursive_folders = False
 
 # Rename and clean videos and accompanying files from this garbage-tags 
 clean_original_filename = True
-clean_name_from = ['VTV', 'www.torentz.3xforum.ro', 'MyTV']
+clean_name_from = ['VTV', 'www.torentz.3xforum.ro']
 
 # No need to change those, but feel free to add/remove some
 valid_subtitle_extensions = ['srt','aas','ssa','sub','smi']
@@ -46,26 +46,20 @@ import glob
 from zipfile import ZipFile
 from time import sleep
 from urllib2 import HTTPError, URLError
+try:
+    from msvcrt import getch
 
-import platform
-is_windows=(platform.system().lower().find("win") > -1)
-
-if(is_windows):
-    print 'Windows system detected'
-    import msvcrt
-    getch = msvcrt.getch
-
-    def winHardLink(source, link_name):
+    def CreateHardLink(source, link_name):
         import ctypes
         ch1 = ctypes.windll.kernel32.CreateHardLinkW
         ch1.argtypes = (ctypes.c_wchar_p, ctypes.c_wchar_p, ctypes.c_uint32)
         ch1.restype = ctypes.c_ubyte
-        # print '%s --> %s' % ( link_name, source )
-        if not ch1(link_name, source, 0):
+        if not ch1(link_name, os.path.join(os.path.dirname(link_name),os.path.basename(source)), 0):
+            print '%s --> %s' % ( link_name, os.path.join(os.path.dirname(link_name),os.path.basename(source)) )
             raise ctypes.WinError()
-    os.link = winHardLink
+    os.link = CreateHardLink
     
-    def winSymLink(source, link_name):
+    def CreateSymLink(source, link_name):
         import ctypes
         csl = ctypes.windll.kernel32.CreateSymbolicLinkW
         csl.argtypes = (ctypes.c_wchar_p, ctypes.c_wchar_p, ctypes.c_uint32)
@@ -73,15 +67,20 @@ if(is_windows):
         flags = 0
         if source is not None and os.path.isdir(source):
             flags = 1
-        # print '%s --> %s' % ( link_name, source )
         if not csl(link_name, source, flags):
+            print '%s --> %s' % (link_name, source)
             raise ctypes.WinError()
-    os.symlink = winSymLink
+    os.symlink = CreateSymLink
 
-else:
-    print 'Unix system detected'
-    import sys, tty
+except ImportError:
+    print 'NotWindows'
+    
+try:
+    import sys, tty, termios
+except ImportError:
+    print 'NotUnix'
     fd = sys.stdin.fileno()
+    old_settings = termios.tcgetattr(fd)
     tty.setraw(sys.stdin.fileno())
     getch = sys.stdin.read(1)
 
@@ -107,6 +106,8 @@ def SameFile(file1, file2):
     except:
         return False
 os.path.samefile = SameFile
+
+
 
 class LegendasTV:
     class SearchLang:
@@ -563,8 +564,8 @@ def cleanAndRenameFile(Folder, filename):
         return filename
 
     fullFilename = os.path.join(Folder, filename)
-    statementClean = re.compile('\W?[\[\(\{]?'+regex+'[\]\)\}]?', re.I)
-    newname = statementClean.sub('', filename)
+    statementClean = re.compile('(?P<sep>\W)[\[\(\{]?'+regex+'[\]\)\}]?(?P=sep)', re.I)
+    newname = statementClean.sub('\\1', filename)
 
     fullNewname = os.path.join(Folder, newname)
 
@@ -588,7 +589,7 @@ def cleanAndRenameFile(Folder, filename):
     # Cleaning subtitles and other files
     glob_pattern = re.sub(r'(?<!\[)\]', '[]]', re.sub(r'\[', '[[]', os.path.splitext(fullFilename)[0]+'.*'))
     for tmpFile in glob.glob(glob_pattern):
-        tmpNew = statementClean.sub('', tmpFile)
+        tmpNew = statementClean.sub('\\1', tmpFile)
         if tmpNew == tmpFile:
             print 'Error cleaning this name: %s' % (tmpFile)
         else:
@@ -624,9 +625,9 @@ def createLinkSameName(Folder, Movie, Destination, HardLink=True):
 
     try:
         if HardLink:
-            os.link(fullDestination, fullLinkName)
+            os.link(Destination, fullLinkName)
         else: # Relative path only when creating symbolic links
-            os.symlink(Destination, fullLinkName)
+            os.symlink(Destination, linkName)
 
         print 'Linked: %s --> %s' % (linkName, Destination)
     except Exception:
@@ -685,9 +686,6 @@ if __name__ == '__main__':
         group=''
         dirpath=''
 
-        # Flag to remove garbage from filename in this item
-        clean_name = clean_original_filename
-
         if originalFilename == '-r':
             recursive_folders = True
 
@@ -701,7 +699,6 @@ if __name__ == '__main__':
         if os.path.isfile(originalFilename):
             if originalFilename.endswith(tuple(valid_extension_modifiers)):
                 originalFilename = os.path.splitext(originalFilename)[0]
-                clean_name = False # Can't rename
             if not originalFilename.endswith(tuple(valid_video_extensions)):
                 print 'Not a video file: ' + originalFilename
                 statistics['NotVideos'] += 1
@@ -737,24 +734,21 @@ if __name__ == '__main__':
         # print 'Analyzing d: %s, f: %s' % (dirpath, originalFilename)
 
         # Remove garbage of movie name and accompanying files
-        if clean_name:
+        if clean_original_filename:
             originalFilename = cleanAndRenameFile(dirpath, originalFilename)
         
-        # check already existing subtitles to avoid re-download
         existSubs=''
         existLangSubs=''
-
-        # Check without language
-        tmp = os.path.splitext(os.path.join(dirpath, originalFilename))[0] + '.s*'
         # Escape square brackets in filenames, Glob's fault...
+        tmp = os.path.splitext(os.path.join(dirpath, originalFilename))[0] + '.s*'
         for subFound in glob.glob(re.sub(r'(?<!\[)\]', '[]]', re.sub(r'\[', '[[]', tmp))):
             existSubs = subFound
             break
         
         wanted_languages = preferred_languages[:]
         
-        # Check with language
         if append_language:
+            # check already existing subtitles to avoid re-download
             for idx, lang in reversed(list(enumerate(wanted_languages))):
                 tmp = os.path.splitext(os.path.join(dirpath, originalFilename))[0] + '.'+lang+'.s*'
                 for existLangSubs in glob.glob(re.sub(r'(?<!\[)\]', '[]]', re.sub(r'\[', '[[]', tmp))):
@@ -772,7 +766,7 @@ if __name__ == '__main__':
             else:
                 continue
         
-        ## Create symlink with the same name as the video, for some players that don't support multiple languages
+            ## Create symlink with the same name as the video, for some players that don't support multiple languages
         if append_language and hardlink_without_lang_to_best_sub and (len(wanted_languages) != len(preferred_languages)):
             createLinkSameName(Folder=dirpath, Movie=originalFilename, Destination=existLangSubs)
     
