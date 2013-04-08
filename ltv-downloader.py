@@ -11,7 +11,7 @@ ltv_password = ''
 default_folder = '.'
 
 # Ordered, from: pt, br, en
-preferred_languages = ['pt', 'br', 'en']
+preferred_languages = ['pt','br','en']
 rename_subtitle = True
 append_language = True
 clean_old_language = True
@@ -31,8 +31,8 @@ clean_name_from = ['VTV','www.torentz.3xforum.ro','MyTV']
 
 # No need to change those, but feel free to add/remove some
 valid_subtitle_extensions = ['srt','aas','ssa','sub','smi']
-valid_video_extensions = ['avi', 'mkv', 'mp4', 'wmv', 'mov', 'mpg', 'mpeg', '3gp', 'flv']
-valid_extension_modifiers = ['!ut', 'part']
+valid_video_extensions = ['avi','mkv','mp4','wmv','mov','mpg','mpeg','3gp','flv']
+valid_extension_modifiers = ['!ut','part']
 
 known_release_groups = ['LOL','2HD','ASAP','FQM','Yify','fever','p0w4','FoV','TLA','refill','notv','reward','bia','maxspeed']
 
@@ -50,9 +50,24 @@ from time import sleep
 from urllib2 import HTTPError, URLError
 
 import platform
-is_windows=(platform.system().lower().find("windows") > -1)
 
-if(is_windows):
+try:
+    from bs4 import BeautifulSoup
+except ImportError:
+    print 'Python module needed: BeautifulSoup4 / bs4'
+    print '\nPress any key to exit...'
+    junk = getch()
+    sys.exit()
+    
+try:
+    from rarfile import RarFile
+except ImportError:
+    print 'Python module needed: rarfile'
+    print '\nPress any key to exit...'
+    junk = getch()
+    sys.exit()
+
+if(platform.system().lower().find("windows") > -1):
     if Debug > 2:
         print 'Windows system detected'
     import msvcrt
@@ -91,21 +106,7 @@ else:
     tty.setraw(sys.stdin.fileno())
     getch = sys.stdin.read(1)
 
-try:
-    from bs4 import BeautifulSoup
-except ImportError:
-    print 'Python module needed: BeautifulSoup4 / bs4'
-    print '\nPress any key to exit...'
-    junk = getch()
-    sys.exit()
-    
-try:
-    from rarfile import RarFile
-except ImportError:
-    print 'Python module needed: rarfile'
-    print '\nPress any key to exit...'
-    junk = getch()
-    sys.exit()
+
 
 def SameFile(file1, file2):
     try:
@@ -208,10 +209,10 @@ class LegendasTV:
                 if iTry == 1:
                     selType = 2
                     if videoSubTitle:
-                        searchstr.append(' '.join(videoTitle+videoSubTitle+[year]))
+                        searchstr.append(' '.join(videoTitle+videoSubTitle+[str(year)]))
 
                     if year:
-                        searchstr.append(' '.join(videoTitle+[year]))
+                        searchstr.append(' '.join(videoTitle+[str(year)]))
                 if iTry == 2:
                     if not year:
                         continue
@@ -222,20 +223,20 @@ class LegendasTV:
                     if group:
                         if videoSubTitle:
                             if year:
-                                searchstr.append(' '.join(videoTitle+videoSubTitle+[group]+[year]))
-                            searchstr.append(' '.join(videoTitle+videoSubTitle+[group]))
+                                searchstr.append(' '.join(videoTitle+videoSubTitle+[str(group)]+[str(year)]))
+                            searchstr.append(' '.join(videoTitle+videoSubTitle+[str(group)]))
 
                         if year:
-                            searchstr.append(' '.join(videoTitle+[group]+[year]))
+                            searchstr.append(' '.join(videoTitle+[str(group)]+[str(year)]))
 
-                        searchstr.append(' '.join(videoTitle+[group]))
+                        searchstr.append(' '.join(videoTitle+[str(group)]))
 
                     if videoSubTitle:
                         if year:
-                            searchstr.append(' '.join(videoTitle+videoSubTitle+[year]))
+                            searchstr.append(' '.join(videoTitle+videoSubTitle+[str(year)]))
                         searchstr.append(' '.join(videoTitle+videoSubTitle))
                     if year:
-                        searchstr.append(' '.join(videoTitle+[year]))
+                        searchstr.append(' '.join(videoTitle+[str(year)]))
                     searchstr.append(' '.join(videoTitle))
 
             for vsearch in searchstr:
@@ -330,23 +331,23 @@ class LegendasTV:
                                 print 'Couldn\'t get Language'
                             continue
                         
-                        downloads = td.contents[5]
-                        possibility['downloads'] = downloads.lower()
-                        
                         sub_name = td.contents[0].contents[0]
                         possibility['sub_name'] = sub_name.lower()
                         
-                        comments = td.contents[7]
-                        possibility['comments'] = comments.lower()
+                        #downloads = td.contents[5]
+                        #possibility['downloads'] = downloads.lower()
                         
-                        rating = td.contents[8].contents[1]
-                        possibility['rating'] = rating.lower()
+                        #comments = td.contents[7]
+                        #possibility['comments'] = comments.lower()
                         
-                        uploader = td.parent.find('a').contents[0]
-                        possibility['uploader'] = uploader.encode('ascii', 'ignore')
+                        #rating = td.contents[8].contents[1]
+                        #possibility['rating'] = rating.lower()
                         
-                        date = span.findAll('td')[2].contents[0]
-                        possibility['date'] = date.lower()
+                        #uploader = td.parent.find('a').contents[0]
+                        #possibility['uploader'] = uploader.encode('ascii', 'ignore')
+                        
+                        #date = span.findAll('td')[2].contents[0]
+                        #possibility['date'] = date.lower()
                         
                         possibility['%'] = 100
                         
@@ -570,7 +571,7 @@ class LegendasTV:
                 for tmp in undesired:
                     if tmp in testname:
                         if Debug > 2:
-                            print '-2, Undesired word found: '+tmp
+                            print '-5, Undesired word found: '+tmp
                         points-=5
                 if size:
                     if size not in testname:
@@ -1089,6 +1090,11 @@ if __name__ == '__main__':
                 input_string.append(os.path.join(originalFilename, files))
             continue
 
+        elif not os.path.exists(originalFilename):
+            if Debug > 2:
+                print '! Error, file not present! Moved? %s' % (originalFilename)
+            continue
+
         else:
             statistics['Failed'] += 1
             if Debug > -1:
@@ -1116,6 +1122,7 @@ if __name__ == '__main__':
         # check already existing subtitles to avoid re-download
         existSubs=[]
         subFound=''
+        sublang=''
 
         # Check without language
         tmp = os.path.splitext(os.path.join(dirpath, originalFilename))[0] + '.s*'
@@ -1139,7 +1146,7 @@ if __name__ == '__main__':
                     else:
                         wanted_languages = wanted_languages[0:idx]
                         
-        if subFound and not os.path.samefile(subFound, sublang):
+        if subFound and (not sublang or not os.path.samefile(subFound, sublang)):
             statistics['Best'] += 1
             if len(input_string) == 1:
                 if Debug > 2:
