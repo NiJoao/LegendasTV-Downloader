@@ -12,10 +12,11 @@ Please, use the **issues** tab to make suggestions and file bugs.
 ## Quick HowTo:
 
 1. Install python (v2.7 recommended) and the modules: BeautifulSoup4, rarfile
-2. Open the file 'ltv-downloader.py' with any text editor
-3. Edit the first configuration lines with your username and password for legendas.tv website
-4. Drag-and-Drop videos or folders on 'ltv-downloader.py'
-5. Enjoy!
+2. Make sure UNRAR is in your PATH and available on console 
+3. Open the file 'ltv-downloader.py' with any text editor
+4. Edit the first configuration lines with your username and password for legendas.tv website
+5. Drag-and-Drop videos or folders on 'ltv-downloader.py'
+6. Enjoy!
 
 
 ## More details:
@@ -23,7 +24,7 @@ Please, use the **issues** tab to make suggestions and file bugs.
 ### What it does:
 
 The script totally automates the downloading and renaming of subtitles from legendas.tv.
-NO user input is required.
+NO user input is required, apart from an optional final "press any key".
 
 It accepts movies/shows files as arguments (Drag-and-dropped too).
 Then it analyzes the file names, searches and chooses the best subtitle from legendasTV, downloads it and renames.
@@ -31,7 +32,7 @@ It also accepts folders as input, analyzing all the files inside, and optionally
 
 Many configurations are available for the user to choose, as explained in the *Configuration* section below.
 The default settings are suited to my case and library.
-I recommend you to look at the default settings below.
+I recommend you to read the comments on the script or look at the settings info below.
 
 With default settings, it stores the downloaded subtitles with the language code appended (e.g. \*.br.srt).
 However, if a subtitles file exists without the language code, it skips that movie.
