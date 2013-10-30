@@ -14,7 +14,6 @@ Please, use the **issues** tab to make suggestions and file bugs.
 1. Install python (v2.7 recommended) and the modules: BeautifulSoup4, rarfile
 2. Make sure UNRAR is in your PATH and available on console 
 3. Open the file 'ltv-downloader.py' with any text editor
-4. Edit the first configuration lines with your username and password for legendas.tv website
 5. Drag-and-Drop videos or folders on 'ltv-downloader.py'
 6. Enjoy!
 
@@ -73,6 +72,7 @@ Here is the description of all the configuration options, available at the beggi
 ##### username & password
 
 If you need explanation on these, press alt-f4
+The new website version doesn't require login anymore
 * default: empty
 
 ##### default_folder
