@@ -3,7 +3,7 @@
 
 #### User Configurations ####
 
-## Fill yours
+## Fill yours - This is OPTIONAL for now! The site doesn't require login anymore
 ltv_username = ''
 ltv_password = ''
 
@@ -46,26 +46,10 @@ import cookielib, urllib2, urllib
 import re, os, sys, tempfile, traceback, shutil, getpass
 import glob
 from zipfile import ZipFile
-from time import sleep
+# from time import sleep
 from urllib2 import HTTPError, URLError
 
 import platform
-
-try:
-    from bs4 import BeautifulSoup
-except ImportError:
-    print 'Python module needed: BeautifulSoup4 / bs4'
-    print '\nPress any key to exit...'
-    junk = getch()
-    sys.exit()
-    
-try:
-    from rarfile import RarFile
-except ImportError:
-    print 'Python module needed: rarfile'
-    print '\nPress any key to exit...'
-    junk = getch()
-    sys.exit()
 
 if(platform.system().lower().find("windows") > -1):
     if Debug > 2:
@@ -106,6 +90,22 @@ else:
     tty.setraw(sys.stdin.fileno())
     getch = sys.stdin.read(1)
 
+try:
+    from bs4 import BeautifulSoup
+except ImportError:
+    print 'Python module needed: BeautifulSoup4 / bs4'
+    print '\nPress any key to exit...'
+    junk = getch()
+    sys.exit()
+    
+try:
+    from rarfile import RarFile
+except ImportError:
+    print 'Python module needed: rarfile'
+    print '\nPress any key to exit...'
+    junk = getch()
+    sys.exit()
+
 
 
 def SameFile(file1, file2):
@@ -116,13 +116,6 @@ def SameFile(file1, file2):
 os.path.samefile = SameFile
 
 class LegendasTV:
-    class SearchLang:
-        PT_BR = '1'
-        PT_PT = '10'
-        EN = '2'
-        ES = '3'
-        OTHER = '100'
-        ALL = '99'
     
     def __init__(self, ltv_username, ltv_password, download_dir=None):
         if not download_dir:
@@ -138,13 +131,15 @@ class LegendasTV:
         urllib2.install_opener(self.opener)
 
     def login(self):
+        name="data[User][username]"
         '''LoginForm:
-            txtLogin -> max_length(15)
-            txtSenha -> max_length(15)
+            data[User][username] -> max_length(15)
+            data[User][password] -> max_length(15)
             chkLogin -> 0|1 (keep logged?)
+            _method -> POST
         '''
-        login_data = urllib.urlencode({'txtLogin':self.username,'txtSenha':self.password,'chkLogin':0})
-        request = urllib2.Request(self.base_url+'/login_verificar.php',login_data)
+        login_data = urllib.urlencode({'data[User][username]':self.username, 'data[User][password]':self.password, '_method':'POST'})
+        request = urllib2.Request(self.base_url+'/login',login_data)
         try:
             response = urllib2.urlopen(request, timeout=10).read()
         except:
@@ -152,9 +147,11 @@ class LegendasTV:
                 print 'login timedout, retrying'
             try:
                 response = urllib2.urlopen(request, timeout=10).read()
-            except:
+            except Exception:
                 if Debug > -1:
                     print '! Error, login timeout?'
+                    print 'print_exc():'
+                    traceback.print_exc(file=sys.stdout)
                 return False
 
         if 'Dados incorretos' in response:
@@ -165,7 +162,7 @@ class LegendasTV:
         return True
 
     def logout(self):
-        request = urllib2.Request(self.base_url+'/logoff.php')
+        request = urllib2.Request(self.base_url+'/users/logout')
         try:
             response = urllib2.urlopen(request, timeout=5)
         except:
@@ -240,18 +237,20 @@ class LegendasTV:
                     searchstr.append(' '.join(videoTitle))
 
             for vsearch in searchstr:
-                for ltvpage in ['', '&pagina=02', '&pagina=03', '&pagina=04', '&pagina=05', '&pagina=06']:
+                for ltvpage in ['', '/page:2', '/page:3', '/page:4', '/page:5', '/page:6']:
                     newPossibilities = 0
                     
-                    search_dict = {'txtLegenda':vsearch,'selTipo':selType,'int_idioma':LegendasTV.SearchLang.ALL}
-                    search_data = urllib.urlencode(search_dict)
+                    # search_dict = {'q':vsearch,'selTipo':selType,'int_idioma':LegendasTV.SearchLang.ALL}
+                    # search_dict = {'q':vsearch,'selTipo':selType,'int_idioma':LegendasTV.SearchLang.ALL}
+                    # search_data = urllib.urlencode(search_dict)
+                    vsearch = urllib.quote(vsearch)
                     
                     if Debug < 1:
                         print '.',
                     else:
                         print "Searching for subtitles with: "+vsearch+", Type "+str(selType)+" "+ltvpage
                     
-                    request = urllib2.Request(self.base_url+'/index.php?opcao=buscarlegenda'+ltvpage,search_data)
+                    request = urllib2.Request(self.base_url+'/util/carrega_legendas_busca/termo:'+vsearch+ltvpage)
                     try:
                         response = urllib2.urlopen(request, timeout=15)
                         page = response.read()
@@ -268,92 +267,121 @@ class LegendasTV:
                     
                     soup = BeautifulSoup(page)
 
-
-                    span_results = soup.find('td',{'id':'conteudodest'}).findAll('span')
-                    if not span_results:
+                    div_results = soup.find('div',{'class':'gallery clearfix list_element'}).findAll('article',recursive=False)
+                    if not div_results:
                         if Debug > 2:
                             print 'No results'
                         break
                     
-                    for span in span_results:
-                        possibility = {}
-                        possibility.clear()
-                        
-                        # There are 2 SPANs per subtitle on results
-                        # Don't look at this one for now
-                        if span.get('class') == ['brls']:
-                            continue
-                        td = span.find('td',{'class':'mais'})
-                        if not td:
+                    for span_article in div_results:
+                        span_results = span_article.findAll('div',recursive=False)
+
+                        if not span_results:
                             if Debug > 2:
-                                print '#### Something went wrong ####'
-                            continue
-                        
-                        newPossibilities += 1
-
-                        # Get the download ID
-                        download_id = td.parent.parent['onclick']
-                        download_id = re.search('(?<=down\(\')[a-z0-9]{20,36}(?=\'\))',download_id).group(0)
-
-                        if download_id in [x['id'] for x in list_possibilities]:
+                                print 'No results'
                             continue
 
-                        possibility['id'] = download_id
-                        if not download_id:
+                        for span in span_results:
+
+                            try:
+                                td = span.find('a').get('href')
+                                sub = span.find('a').contents[0]
+
+                                flag = span.find('img').get('src')
+                            except:
+                                if Debug > 2:
+                                    print "! Error parsing result list: "+span.prettify()
+                                continue
+
+                            if not td:
+                                if Debug > 2:
+                                    print '#### Something went wrong ####'
+                                continue
+
+                            possibility = {}
+                            possibility.clear()
+                            
+                            newPossibilities += 1
+
+                            # Parse the link
+                            tmpregex = re.search('/download/(\w+)/(\w+)/(\w+)',td)
+
+                            if not tmpregex or tmpregex==None or tmpregex.groups<3:
+                                print '#### Error parsing link:'+td+' ####'
+                                continue
+
+                            # Get the download ID
+                            download_id = tmpregex.group(1)
+                            release = tmpregex.group(3)
+
+                            if download_id in [x['id'] for x in list_possibilities]:
+                                continue
+
+                            possibility['id'] = download_id
+                            if not download_id:
+                                if Debug > 2:
+                                    print 'Couldn\'t get download_id'
+                                continue
+                            
+                            try:
+                                release = release.decode('utf-8', 'ignore')
+                            except Exception:
+                                pass
+                            try:
+                                release = release.encode('ascii', 'ignore')
+                            except Exception:
+                                pass
+
+                            possibility['release'] = release.lower()
+                            if not possibility['release']:
+                                if Debug > 2:
+                                    print 'Couldn\'t get Release'
+                                continue
+                            
+                            ## Get the language
+                            tmpregex = re.search('/img/\w*/(?:icon|flag)_(\w+)\.(gif|jpg|jpeg|png)',flag)
+                            
+                            if not tmpregex or tmpregex==None or tmpregex.groups<2:
+                                print '#### Error parsing flag: '+flag+' ####'
+                                continue
+                            language = tmpregex.group(1)
+
+                            if 'pt' in language:
+                                possibility['language'] = 'pt'
+                            elif 'braz' in language:
+                                possibility['language'] = 'br'
+                            elif 'usa' in language:
+                                possibility['language'] = 'en'
+
+
+                            if not 'language' in possibility or not possibility['language']:
+                                if Debug > 2:
+                                    print 'Couldn\'t get Language'
+                                continue
+                            
+                            ## Now it doesn't have a SubName
+                            possibility['sub_name'] = sub.lower()
+                            
+                            #downloads = td.contents[5]
+                            #possibility['downloads'] = downloads.lower()
+                            
+                            #comments = td.contents[7]
+                            #possibility['comments'] = comments.lower()
+                            
+                            #rating = td.contents[8].contents[1]
+                            #possibility['rating'] = rating.lower()
+                            
+                            #uploader = td.parent.find('a').contents[0]
+                            #possibility['uploader'] = uploader.encode('ascii', 'ignore')
+                            
+                            #date = span.findAll('td')[2].contents[0]
+                            #possibility['date'] = date.lower()
+                            
+                            possibility['%'] = 100
+                            
+                            list_possibilities.append(possibility)
                             if Debug > 2:
-                                print 'Couldn\'t get download_id'
-                            continue
-                        
-                        release = td.parent.parent.find('span',{'class':'brls'}).contents[0]
-                        possibility['release'] = release.lower()
-                        try:
-                            possibility['release'] = possibility['release'].decode('utf-8', 'ignore')
-                        except Exception:
-                            pass
-                        try:
-                            possibility['release'] = possibility['release'].encode('ascii', 'ignore')
-                        except Exception:
-                            pass
-                        if not possibility['release']:
-                            if Debug > 2:
-                                print 'Couldn\'t get Release'
-                            continue
-                        
-                        tmp=td.parent.findAll('img')
-                        for tmp2 in tmp:
-                            language=re.search('(?<=flag_)[a-zA-Z]{1,3}(?=\.(gif|jpg|jpeg|png))',tmp2.get('src'), re.I)
-                            if language and language!=None and language.group(0).__len__()>0:
-                                possibility['language'] = language.group(0).lower()
-                                break
-                        
-                        if not 'language' in possibility or not possibility['language']:
-                            if Debug > 2:
-                                print 'Couldn\'t get Language'
-                            continue
-                        
-                        sub_name = td.contents[0].contents[0]
-                        possibility['sub_name'] = sub_name.lower()
-                        
-                        #downloads = td.contents[5]
-                        #possibility['downloads'] = downloads.lower()
-                        
-                        #comments = td.contents[7]
-                        #possibility['comments'] = comments.lower()
-                        
-                        #rating = td.contents[8].contents[1]
-                        #possibility['rating'] = rating.lower()
-                        
-                        #uploader = td.parent.find('a').contents[0]
-                        #possibility['uploader'] = uploader.encode('ascii', 'ignore')
-                        
-                        #date = span.findAll('td')[2].contents[0]
-                        #possibility['date'] = date.lower()
-                        
-                        possibility['%'] = 100
-                        
-                        list_possibilities.append(possibility)
-                        if Debug > 2:
-                            print 'FOUND!: %s - %s' % (possibility['language'], possibility['release'])
+                                print 'FOUND!: %s - %s' % (possibility['language'], possibility['release'])
 
 
                     if Debug > 2:
@@ -452,7 +480,7 @@ class LegendasTV:
     def download(self, subtitle):
         download_id = subtitle['id']
         if download_id:
-            url_request = self.base_url+'/info.php?d='+download_id+'&c=1'
+            url_request = self.base_url+'/downloadarquivo/'+download_id
             if Debug > 2:
                 print '------- Downloading -------'
                 print 'Downloading %s, %s' % (subtitle['language'], subtitle['release'])
@@ -470,15 +498,26 @@ class LegendasTV:
                     if Debug > 2:
                         print "! Error, download timedout"
                     return False
-                
-            self.archivename = os.path.join(self.download_path, str(download_id))
-            if 'rar' in response.info().get('Content-Type'):
-                self.archivename += '.rar'
-            elif 'zip' in response.info().get('Content-Type'):
-                self.archivename += '.zip'
+            
+            if response.info().has_key('Content-Disposition'):
+                # If the response has Content-Disposition, we take file name from it
+                localName = response.info()['Content-Disposition'].split('filename=')[1]
+                if localName[0] == '"' or localName[0] == "'":
+                    localName = localName[1:-1]
+
+            if len(localName)>4:
+                self.archivename= os.path.join(self.download_path, str(localName))
             else:
-                if Debug > 2:
-                    print 'Couldn\'t detect download MIME TYPE. Not forcing extension'
+                self.archivename = os.path.join(self.download_path, str(download_id))
+
+            if response.info().has_key('Content-Type'):
+                if 'rar' in response.info().get('Content-Type'):
+                    self.archivename += '.rar'
+                elif 'zip' in response.info().get('Content-Type'):
+                    self.archivename += '.zip'
+                else:
+                    if Debug > 2:
+                        print 'No download MIME TYPE. Not forcing extension'
 
             f = open(self.archivename, 'wb')
             f.write(legenda)
@@ -492,208 +531,204 @@ class LegendasTV:
 
         if Debug > 2:
             print '------- Extracting -------'
+        if Debug > 3:
+            print 'File: '+self.archivename
+        if Debug > 2:
+            print "Extracting a",
         try:
+            archive = ZipFile(self.archivename)
             if Debug > 2:
-                print "Extracting a",
-            if '.zip' in self.archivename:
-                if Debug > 2:
-                    print 'zip file...'
-                archive = ZipFile(self.archivename)
-            else:
-                if '.rar' in self.archivename:
-                    if Debug > 2:
-                        print 'rar file: %s' % (self.archivename)
-                else:
-                    if Debug > 2:
-                        print 'GUESSED rar file...'
-                archive = RarFile(self.archivename)
-                
+                print 'zip file...'
         except:
-            if Debug > -1:
-                print '! Error, Error opening archive.'
-                print 'UNRAR must be available on console'
-            statistics['Failed'] += 1
-            return False
-        else:
-
-            for index, tmp in enumerate(wanted_languages):
-                if tmp == language:
-                    language_compensation = 15*index
-                    break
-                
-            files = archive.infolist()
-            srts = []
-
-            unique_compensation = 0
-            if len(files) == 1:
-                unique_compensation = 15
-
-            for srtname in files:
-                points = 100 - language_compensation + unique_compensation
-                try:
-                    srtname.filename = srtname.filename.decode('utf-8', 'ignore')
-                except Exception:
-                    pass
-                try:
-                    srtname.filename = srtname.filename.encode('ascii', 'ignore')
-                except Exception:
-                    pass
-
-                testname = srtname.filename.lower()
-                if not testname.endswith(tuple(valid_subtitle_extensions)+('rar', 'zip')):
-                    #if Debug > 2:
-                    #    print 'Non Sub file: ' + str(srtname)
-                    continue
-
+            try:
+                archive = RarFile(self.archivename)
                 if Debug > 2:
-                    print 'Analyzing: %s ' % (testname)
-
-                if language not in testname:
-                    if Debug > 2:
-                        print '-1, Language not in FileName: '+language
-                    points-=1
-                    
-                if group not in testname:
-                    if Debug > 2:
-                        print '-30, Correct Release not found: '+group
-                    points-=30
-                    
-                for tmp in quality:
-                    denormalizedQuality = deNormalizeQuality(tmp)
-                    for tmp2 in denormalizedQuality:
-                        if tmp2 in testname:
-                            break
-                        if tmp2 == denormalizedQuality[-1]:
-                            if Debug > 2:
-                                print '-5, Correct quality not found: '+tmp2
-                            points-=5
-
-                for tmp in undesired:
-                    if tmp in testname:
-                        if Debug > 2:
-                            print '-5, Undesired word found: '+tmp
-                        points-=5
-                if size:
-                    if size not in testname:
-                        if Debug > 2:
-                            print '-15, Correct size not found: '+size
-                        points-=15
-                else:
-                    if re.search("("+'|'.join(video_size)+")(i|p)?", testname, re.I):
-                        if Debug > 2:
-                            print '-20, Too much size found: ' + srtname.filename
-                        points-=20
-                if Debug > 2:
-                    print 'Adding subtitle file with points %d: %s'  % (points, srtname.filename)
-                srts.append([points, srtname])
-
-            if Debug > 2:
-                print '-------'
-            if not srts:
+                    print 'rar file...'
+            except:
                 if Debug > -1:
-                    print '! Error: No valid subs found on archive'
+                    print '! Error, Error opening archive: '+self.archivename
+                    print 'UNRAR must be available on console'
                 statistics['Failed'] += 1
                 return False
-            
-            srts.sort(reverse=True)
-            extract = []
-            
-            for idx, [p, n] in enumerate(srts):
-                if Debug > 2:
-                    print "Chance %d, %d%%: %s" % (idx, p, os.path.basename(n.filename))
 
-            #if srts[0][0] > confidence_threshold:
-            #    extract.append(srts[0][1])
-            extract.append(srts[0][1])
+        for index, tmp in enumerate(wanted_languages):
+            if tmp == language:
+                language_compensation = 15*index
+                break
+            
+        files = archive.infolist()
+        srts = []
 
-            # maximum=confidence_threshold
-            # for idx, [p, n] in enumerate(srts):
-            #     print "Result %d, %d%%: %s" % (idx, p, n.filename)
-            #     if p >= maximum:
-            #         maximum = p
-            #         extract.append(n)
+        unique_compensation = 0
+        if len(files) == 1:
+            unique_compensation = 15
+
+        for srtname in files:
+            points = 100 - language_compensation + unique_compensation
+            try:
+                srtname.filename = srtname.filename.decode('utf-8', 'ignore')
+            except Exception:
+                pass
+            try:
+                srtname.filename = srtname.filename.encode('ascii', 'ignore')
+            except Exception:
+                pass
+
+            testname = srtname.filename.lower()
+            if not testname.endswith(tuple(valid_subtitle_extensions)+('rar', 'zip')):
+                #if Debug > 2:
+                #    print 'Non Sub file: ' + str(srtname)
+                continue
+
             if Debug > 2:
-                print '------------'
-            if len(extract) == 0:
-                if Debug > 2:
-                    print '! Error: No subtitles with at least %d%% similarity!' % (confidence_threshold)
-                #statistics['Failed'] += 1
-                return False
-                
-            ## Extracting
-            for fileinfo in extract:
-                fileinfo.filename = os.path.basename(fileinfo.filename)
-                if Debug > 2:
-                    print 'Extracting: %s' % (fileinfo.filename)
+                print 'Analyzing: %s ' % (testname)
 
-                if fileinfo.filename.endswith(('rar', 'zip')):
+            if language not in testname:
+                if Debug > 2:
+                    print '-1, Language not in FileName: '+language
+                points-=1
+                
+            if group not in testname:
+                if Debug > 2:
+                    print '-30, Correct Release not found: '+group
+                points-=30
+                
+            for tmp in quality:
+                denormalizedQuality = deNormalizeQuality(tmp)
+                for tmp2 in denormalizedQuality:
+                    if tmp2 in testname:
+                        break
+                    if tmp2 == denormalizedQuality[-1]:
+                        if Debug > 2:
+                            print '-5, Correct quality not found: '+tmp2
+                        points-=5
+
+            for tmp in undesired:
+                if tmp in testname:
                     if Debug > 2:
-                        print 'Recursive extract, RAR was inside: %s' % (fileinfo.filename)
-                    archive.extract(fileinfo, self.download_path)
-                    self.archivename = os.path.join(self.download_path, fileinfo.filename)
-                    if not ltv.extract_sub(dirpath, originalFilename, group, size, quality, language):
-                        return False
-                    continue
-                    
-                dest_filename = fileinfo.filename
-
-                if len(extract) == 1 and rename_subtitle:
-                    dest_filename = os.path.splitext(originalFilename)[0] + os.path.splitext(dest_filename)[1]
-                
-                if append_language:
-                    dest_filename = os.path.splitext(dest_filename)[0]+'.'+language+os.path.splitext(dest_filename)[1]
-                
-                if Debug > 2:
-                    print 'Extracting subtitle as: %s' % (dest_filename)
-                dest_fullFilename = os.path.join(dirpath, dest_filename)
-                
-                try:
-                    # fileinfo.filename = dest_filename
-                    # archive.extract(fileinfo, dirpath)
-
-                    fileContents = archive.read(fileinfo)
-                    
-                    f = open(dest_fullFilename, 'wb')
-                    f.write(fileContents)
-                    f.close()
+                        print '-5, Undesired word found: '+tmp
+                    points-=5
+            if size:
+                if size not in testname:
                     if Debug > 2:
-                        print 'Subtitle saved with sucess in: %s!' % dirpath
-                    if language == 'pt':
-                        statistics['PT'] += 1
-                    elif language == 'br':
-                        statistics['BR'] += 1
-                    elif language == 'en':
-                        statistics['EN'] += 1
-                    if not wanted_languages == preferred_languages:
-                        statistics['Upg'] += 1
-                
-                except Exception:
-                    statistics['Failed'] += 1
-                    if Debug > -1:
-                        print '! Error, decrompressing!'
-                        print 'print_exc():'
-                        traceback.print_exc(file=sys.stdout)
-                        print
-                        print 'print_exc(1):'
-                        traceback.print_exc(limit=1, file=sys.stdout)
+                        print '-15, Correct size not found: '+size
+                    points-=15
+            else:
+                if re.search("("+'|'.join(video_size)+")(i|p)?", testname, re.I):
+                    if Debug > 2:
+                        print '-20, Too much size found: ' + srtname.filename
+                    points-=20
+            if Debug > 2:
+                print 'Adding subtitle file with points %d: %s'  % (points, srtname.filename)
+            srts.append([points, srtname])
+
+        if Debug > 2:
+            print '-------'
+        if not srts:
+            if Debug > -1:
+                print '! Error: No valid subs found on archive'
+            statistics['Failed'] += 1
+            return False
+        
+        srts.sort(reverse=True)
+        extract = []
+        
+        for idx, [p, n] in enumerate(srts):
+            if Debug > 2:
+                print "Chance %d, %d%%: %s" % (idx, p, os.path.basename(n.filename))
+
+        #if srts[0][0] > confidence_threshold:
+        #    extract.append(srts[0][1])
+        extract.append(srts[0][1])
+
+        # maximum=confidence_threshold
+        # for idx, [p, n] in enumerate(srts):
+        #     print "Result %d, %d%%: %s" % (idx, p, n.filename)
+        #     if p >= maximum:
+        #         maximum = p
+        #         extract.append(n)
+        if Debug > 2:
+            print '------------'
+        if len(extract) == 0:
+            if Debug > 2:
+                print '! Error: No subtitles with at least %d%% similarity!' % (confidence_threshold)
+            #statistics['Failed'] += 1
+            return False
+            
+        ## Extracting
+        for fileinfo in extract:
+            fileinfo.filename = os.path.basename(fileinfo.filename)
+            if Debug > 2:
+                print 'Extracting: %s' % (fileinfo.filename)
+
+            if fileinfo.filename.endswith(('rar', 'zip')):
+                if Debug > 2:
+                    print 'Recursive extract, RAR was inside: %s' % (fileinfo.filename)
+                archive.extract(fileinfo, self.download_path)
+                self.archivename = os.path.join(self.download_path, fileinfo.filename)
+                if not ltv.extract_sub(dirpath, originalFilename, group, size, quality, language):
                     return False
+                continue
+                
+            dest_filename = fileinfo.filename
 
-                if clean_old_language:
-                    tmp = os.path.splitext(os.path.join(dirpath, originalFilename))[0] + '.??.s*'
-                    for tmp2 in glob.glob(re.sub(r'(?<!\[)\]', '[]]', re.sub(r'\[', '[[]', tmp))):
-                        if Debug > 2:
-                            print 'Found: %s' % tmp2
-                        if os.path.samefile(dest_fullFilename, tmp2):
-                            continue
-                        if Debug > 2:
-                            print 'Deleted old language: %s' % os.path.basename(tmp2)
-                        os.remove(tmp2)
+            if len(extract) == 1 and rename_subtitle:
+                dest_filename = os.path.splitext(originalFilename)[0] + os.path.splitext(dest_filename)[1]
+            
+            if append_language:
+                dest_filename = os.path.splitext(dest_filename)[0]+'.'+language+os.path.splitext(dest_filename)[1]
+            
+            if Debug > 2:
+                print 'Extracting subtitle as: %s' % (dest_filename)
+            dest_fullFilename = os.path.join(dirpath, dest_filename)
+            
+            try:
+                # fileinfo.filename = dest_filename
+                # archive.extract(fileinfo, dirpath)
 
-                ## Create hard/SymLink with the same name as the video, for legacy players
-                if hardlink_without_lang_to_best_sub and ( not rename_subtitle or append_language):
-                    createLinkSameName(Folder=dirpath, Movie=originalFilename, Destination=dest_filename)
+                fileContents = archive.read(fileinfo)
+                
+                f = open(dest_fullFilename, 'wb')
+                f.write(fileContents)
+                f.close()
+                if Debug > 2:
+                    print 'Subtitle saved with sucess in: %s!' % dirpath
+                if language == 'pt':
+                    statistics['PT'] += 1
+                elif language == 'br':
+                    statistics['BR'] += 1
+                elif language == 'en':
+                    statistics['EN'] += 1
+                if not wanted_languages == preferred_languages:
+                    statistics['Upg'] += 1
+            
+            except Exception:
+                statistics['Failed'] += 1
+                if Debug > -1:
+                    print '! Error, decrompressing!'
+                    print 'print_exc():'
+                    traceback.print_exc(file=sys.stdout)
+                    print
+                    print 'print_exc(1):'
+                    traceback.print_exc(limit=1, file=sys.stdout)
+                return False
 
-            return True
+            if clean_old_language:
+                tmp = os.path.splitext(os.path.join(dirpath, originalFilename))[0] + '.??.s*'
+                for tmp2 in glob.glob(re.sub(r'(?<!\[)\]', '[]]', re.sub(r'\[', '[[]', tmp))):
+                    if Debug > 2:
+                        print 'Found: %s' % tmp2
+                    if os.path.samefile(dest_fullFilename, tmp2):
+                        continue
+                    if Debug > 2:
+                        print 'Deleted old language: %s' % os.path.basename(tmp2)
+                    os.remove(tmp2)
+
+            ## Create hard/SymLink with the same name as the video, for legacy players
+            if hardlink_without_lang_to_best_sub and ( not rename_subtitle or append_language):
+                createLinkSameName(Folder=dirpath, Movie=originalFilename, Destination=dest_filename)
+
+        return True
         
 
 def cleanAndRenameFile(Folder, filename):
@@ -965,7 +1000,6 @@ def parseFileName(filename):
                 statistics['Errors'] += 1
                 if Debug > 2:
                     print '! Error, 2 Sizes in file?!?! '+size+' & '+item
-                sleep(1)
             data['size'].append(sizeRegex.sub('\\1', item))
             tagFound = 1
             continue
@@ -1011,22 +1045,22 @@ if __name__ == '__main__':
 
 
     # If variables above are empty, ask from keyboard
-    if len(ltv_username) == 0:
-        ltv_username = raw_input('Username: ')
-    if len(ltv_password) == 0:
-        ltv_password = getpass.getpass('Password: ')
+    # if len(ltv_username) == 0:
+    #     ltv_username = raw_input('Username: ')
+    # if len(ltv_password) == 0:
+    #     ltv_password = getpass.getpass('Password: ')
 
     ltv = LegendasTV(ltv_username, ltv_password)
 
     # Logging in Legendas.TV
-    if not ltv.login():
-        if Debug > -1:
-            print '\nPress any key to exit...'
-        junk = getch()
-        sys.exit()
+    # if not ltv.login():
+    #     if Debug > -1:
+    #         print '\nPress any key to exit...'
+    #     junk = getch()
+    #     sys.exit()
     
-    if Debug > 0:
-        print 'Logged with success!'
+    # if Debug > 0:
+    #     print 'Logged with success!'
 
     input_string = sys.argv[1:]
     if len(input_string) == 0:
@@ -1242,7 +1276,6 @@ if __name__ == '__main__':
                     statistics['Errors'] += 1
                     if Debug > 2:
                         print '! Error, 2 Sizes in file?!?! '+size+' & '+item
-                    sleep(1)
                 size = sizeRegex.sub('\\1', item)
                 tagFound = 1
                 continue
@@ -1338,4 +1371,3 @@ if __name__ == '__main__':
 
     print '\nPress any key to exit...'
     junk = getch()
-#    sleep(3)
