@@ -713,6 +713,10 @@ class LegendasTV:
                     statistics['DL'] += 1
                     if not local.wanted_languages == preferred_languages:
                         statistics['Upg'] += 1
+                    if language == local.wanted_languages[0]:
+                        statistics['Best'] += 1
+                    else:
+                        statistics['NoBest'] += 1
                     if language == 'pt':
                         statistics['PT'] += 1
                     elif language == 'br':
@@ -1112,12 +1116,12 @@ def ltvdownloader(videosQ):
                 createLinkSameName(Folder=dirpath, Movie=originalFilename, Destination=sublang)
         
             if len(local.wanted_languages) == 0:
-                with lock:
-                    statistics['Best'] += 1
-                if len(input_string) == 1:
+                if len(input_string) == 2:
                     if Debug > 2:
                         local.output+='Single argument: Forcing search\n'
                 else:
+                    with lock:
+                        statistics['Best'] += 1
                     if Debug > -1:
                         local.output+='Best-language subtitles already present\n'
                     continue
@@ -1243,27 +1247,24 @@ def ltvdownloader(videosQ):
                 local.output+='------------------\n'
 
             subtitle = ltv.search(videoTitle, videoSubTitle, year, season, episode, group, size, quality)
-            if not subtitle:
-                if local.wanted_languages == preferred_languages:
-                    with lock:
-                        statistics['NoSubs'] += 1
-                    if Debug > -1:
-                        local.output+='No subtitles found\n'
-                else:
-                    with lock:
-                        statistics['NoUpg'] += 1
-                    if Debug > -1:
-                        local.output+='No better subtitles found\n'
-                continue
-            
-            if subtitle['%'] < confidence_threshold:
-                if Debug > -1:
-                    local.output+='Only bad subtitles, similiarity: '+str(subtitle['%'])+'\n'
+            if not subtitle or subtitle['%'] < confidence_threshold:
                 with lock:
                     if local.wanted_languages == preferred_languages:
                         statistics['NoSubs'] += 1
                     else:
-                        statistics['NoUpg'] += 1
+                        statistics['NoBest'] += 1
+
+            if not subtitle:
+                if local.wanted_languages == preferred_languages:
+                    if Debug > -1:
+                        local.output+='No subtitles found\n'
+                else:
+                    if Debug > -1:
+                        local.output+='No better subtitles found\n'
+                continue
+            if subtitle['%'] < confidence_threshold:
+                if Debug > -1:
+                    local.output+='Only bad subtitles, similiarity: '+str(subtitle['%'])+'\n'
                 continue
                 
             if ltv.download(subtitle):
@@ -1278,7 +1279,7 @@ def ltvdownloader(videosQ):
                 if local.wanted_languages == preferred_languages:
                     statistics['NoSubs'] += 1
                 else:
-                    statistics['NoUpg'] += 1
+                    statistics['NoBest'] += 1
 
             if Debug > -1:
                 local.output+='Failed to download subtitle: '+subtitle['release']+'\n'
@@ -1314,7 +1315,7 @@ if __name__ == '__main__':
     valid_video_extensions = [x.lower() for x in valid_video_extensions]
     valid_subtitle_extensions = [x.lower() for x in valid_subtitle_extensions]
     
-    statistics={'Videos':0, 'NotVideos':0, 'Folders':0, 'Shows':0, 'Movies':0, 'Failed':0, 'Errors':0, 'Best':0, 'DL':0, 'Upg':0, 'NoUpg':0, 'NoSubs':0, 'PT':0, 'BR':0, 'EN':0}
+    statistics={'Videos':0, 'NotVideos':0, 'Folders':0, 'Shows':0, 'Movies':0, 'Failed':0, 'Errors':0, 'Best':0, 'DL':0, 'Upg':0, 'NoBest':0, 'NoSubs':0, 'PT':0, 'BR':0, 'EN':0}
 
 
     # If variables above are empty, ask from keyboard
@@ -1339,6 +1340,7 @@ if __name__ == '__main__':
     if len(input_string) == 0:
         input_string.append(default_folder)
 
+    input_string.append("-OI")
 
     videosQ = queue.Queue()
 
@@ -1351,6 +1353,7 @@ if __name__ == '__main__':
     if Debug > -1:
         print('Listing files. First results can take a few seconds.\n')
 
+    OriginalInputFinished = False
 
     # Parsing all arguments (Files)
     for originalFilename in input_string:
@@ -1364,6 +1367,10 @@ if __name__ == '__main__':
 
         if originalFilename == '-r':
             recursive_folders = True
+            continue
+
+        if originalFilename == '-DI':
+            OriginalInputFinished = True
             continue
 
         if originalFilename == '-f':
@@ -1386,14 +1393,14 @@ if __name__ == '__main__':
                     print('Not a video file: %s' % (os.path.basename(originalFilename)))
                 statistics['NotVideos'] += 1
                 continue
-            if len(input_string)==1:
+            if len(input_string)==2:
                 ForceSearch=True
                 if Debug > 2:
                     local.output+='Single argument: Forcing search, ignore existing subs\n'
             
         elif os.path.isdir(originalFilename):
             if not recursive_folders:
-                if len(input_string) > 1:
+                if OriginalInputFinished:
                     if Debug > 2:
                         print('Directory found, recursiveness OFF: %s' % (originalFilename))
                     continue
@@ -1454,7 +1461,7 @@ if __name__ == '__main__':
         print('PT: %d,  BR: %d,  EN: %d' % (statistics['PT'], statistics['BR'], statistics['EN']))
         
         print('\nFinal subtitles status in parsed library:')
-        print('Best: %d,  Upgradeable: %d,  No Subs: %d' % (statistics['Best'], statistics['NoUpg'], statistics['NoSubs']))
+        print('Best: %d,  Upgradeable: %d,  No Subs: %d' % (statistics['Best'], statistics['NoBest'], statistics['NoSubs']))
 
     print('\nPress any key to exit...')
     junk = getch()
