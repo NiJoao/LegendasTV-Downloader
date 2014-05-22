@@ -25,25 +25,42 @@ confidence_threshold = 50
 # Recursivity also becomes active after a '-r' argument
 recursive_folders = False
 
+# Append or update IMDB rating at the end of movie folders
+# Folders must have the movie name followed by the year inside parenthesis, otherwise they are ignored
+# eg: "Milk (2008)" becomes: "Milk (2008) [7.7]"
+iMDBRating = True
+
 # Rename and clean videos and accompanying files from this garbage-tags 
 clean_original_filename = True
 clean_name_from = ['VTV','www.torentz.3xforum.ro','MyTV']
 
 # No need to change those, but feel free to add/remove some
-valid_subtitle_extensions = ['srt','aas','ssa','sub','smi']
+valid_subtitle_extensions = ['srt','txt','aas','ssa','sub','smi']
 valid_video_extensions = ['avi','mkv','mp4','wmv','mov','mpg','mpeg','3gp','flv']
 valid_extension_modifiers = ['!ut','part']
 
-known_release_groups = ['LOL','2HD','ASAP','FQM','Yify','fever','p0w4','FoV','TLA','refill','notv','reward','bia','maxspeed']
-
 Debug = 0
 
-####### End of user configurations #######
+####### End of regular user configurations #######
+
+known_release_groups = ['LOL','2HD','ASAP','FQM','Yify','killers','fum','fever','p0w4','FoV','TLA','refill','notv','reward','bia','maxspeed']
+
+## Set this flag using -f as parameter, to force search and replace all subtitles. 
+## This option is implied when only one argument is passed (single file dragged & dropped)
+ForceSearch=False
+
+## LegendasTV timeout and number of threads to use. Increasing them too high may affect the website performance, please be careful
+ltv_timeout = 15
+thread_count = 5
+
 
 ####### Dragons ahead !! #######
 
-import http.cookiejar, urllib.request, urllib.error, urllib.parse, urllib.request, urllib.parse, urllib.error
+Done = False
+
+import http.cookiejar, urllib
 import re, os, sys, filecmp, tempfile, traceback, shutil, getpass, time, random
+import json
 import glob
 
 from zipfile import ZipFile
@@ -56,11 +73,6 @@ local = threading.local()
 local.output = ''
 local.wanted_languages = []
 
-## Set this flag using -f as parameter
-ForceSearch=False
-
-Done=False
-thread_count = 5
 
 import signal
 def signal_handler(signal, frame):
@@ -100,7 +112,6 @@ if(platform.system().lower().find("windows") > -1):
         if not csl(link_name, source, flags):
             raise ctypes.WinError()
     os.symlink = winSymLink
-
 else:
     if Debug > 2:
         print('Unix system detected')
@@ -146,6 +157,12 @@ class LegendasTV:
         self.base_url = 'http://legendas.tv'
         self.username = ltv_username
         self.password = ltv_password
+        
+        self.login_url = self.base_url+'/login'
+        self.logout_url = self.base_url+'/users/logout'
+        #self.searh_url = self.base_url+'/busca/'
+        self.searh_url = self.base_url+'/util/carrega_legendas_busca/'
+        self.download_url = self.base_url+'/downloadarquivo/'
 
         self.cookieJar = http.cookiejar.CookieJar()
         self.opener= urllib.request.build_opener(urllib.request.HTTPCookieProcessor(self.cookieJar))
@@ -161,14 +178,14 @@ class LegendasTV:
             _method -> POST
         '''
         login_data = urllib.parse.urlencode({'data[User][username]':self.username, 'data[User][password]':self.password, '_method':'POST'})
-        request = urllib.request.Request(self.base_url+'/login',login_data)
+        request = urllib.request.Request(self.login_url,login_data)
         try:
-            response = urllib.request.urlopen(request, timeout=10).read()
+            response = urllib.request.urlopen(request, timeout=ltv_timeout).read()
         except:
             if Debug > 0:
                 print('login timedout, retrying')
             try:
-                response = urllib.request.urlopen(request, timeout=10).read()
+                response = urllib.request.urlopen(request, timeout=ltv_timeout).read()
             except Exception:
                 if Debug > -1:
                     print('! Error, login timeout?')
@@ -185,9 +202,9 @@ class LegendasTV:
 
     ## Logout
     def logout(self):
-        request = urllib.request.Request(self.base_url+'/users/logout')
+        request = urllib.request.Request(self.logout_url)
         try:
-            response = urllib.request.urlopen(request, timeout=5)
+            response = urllib.request.urlopen(request, timeout=ltv_timeout)
         except:
             return False
         return True
@@ -209,90 +226,91 @@ class LegendasTV:
         
         list_possibilities = []
 
-        for iTry in 1,2:
+        for iTry in 1,2,3:
             if len(list_possibilities) > 0:
                 break
-            searchstr = []
+            vsearch_array = []
 
             if season and episode:
-                selType = 1
-
                 if iTry == 1:
-                    searchstr.append(' '.join(videoTitle)+' '+season+'E'+episode)
-                    searchstr.append(' '.join(videoTitle)+' '+season+'x'+episode)
+                    vsearch_array.append(' '.join(videoTitle)+' '+season+'E'+episode)
 
                 if iTry == 2:
-                    searchstr.append(' '.join(videoTitle)+' '+season+episode)
+                    vsearch_array.append(' '.join(videoTitle)+' '+season+'x'+episode)
 
-                if iTry > 2:
-                    break
+                if iTry == 3:
+                    vsearch_array.append(' '.join(videoTitle)+' '+season+episode)
+                    ## vsearch_array.append(' '.join(videoTitle)+' '+season+' '+episode)
+                
             else:
                 if iTry == 1:
-                    selType = 2
+                    
+                    if videoSubTitle and group and year:
+                        vsearch_array.append(' '.join(videoTitle+videoSubTitle+[str(group)]+[str(year)]))
+                    
+                    if videoSubTitle and year:
+                        vsearch_array.append(' '.join(videoTitle+videoSubTitle+[str(year)]))
+                    
                     if videoSubTitle:
-                        searchstr.append(' '.join(videoTitle+videoSubTitle+[str(year)]))
-
+                        vsearch_array.append(' '.join(videoTitle+videoSubTitle))
+                    
                     if year:
-                        searchstr.append(' '.join(videoTitle+[str(year)]))
+                        vsearch_array.append(' '.join(videoTitle+[str(year)]))
+                    
                 if iTry == 2:
-                    if not year:
-                        continue
-                    searchstr.append(' '.join(videoTitle))
-
-                if iTry == 2:
-                    selType = 1
+                    if videoSubTitle and group:
+                        vsearch_array.append(' '.join(videoTitle+videoSubTitle+[str(group)]))
+                    
+                    if group and year:
+                        vsearch_array.append(' '.join(videoTitle+[str(group)]+[str(year)]))
+                    
+                if iTry == 3:
                     if group:
-                        if videoSubTitle:
-                            if year:
-                                searchstr.append(' '.join(videoTitle+videoSubTitle+[str(group)]+[str(year)]))
-                            searchstr.append(' '.join(videoTitle+videoSubTitle+[str(group)]))
-
-                        if year:
-                            searchstr.append(' '.join(videoTitle+[str(group)]+[str(year)]))
-
-                        searchstr.append(' '.join(videoTitle+[str(group)]))
-
-                    if videoSubTitle:
-                        if year:
-                            searchstr.append(' '.join(videoTitle+videoSubTitle+[str(year)]))
-                        searchstr.append(' '.join(videoTitle+videoSubTitle))
-                    if year:
-                        searchstr.append(' '.join(videoTitle+[str(year)]))
-                    searchstr.append(' '.join(videoTitle))
+                        vsearch_array.append(' '.join(videoTitle+[str(group)]))
+                    
+                    vsearch_array.append(' '.join(videoTitle))
 
             ## Search 6 pages and build a list of possibilities
-            for vsearch in searchstr:
-                for ltvpage in ['', '/page:2', '/page:3', '/page:4', '/page:5', '/page:6']:
+            for vsearch in vsearch_array:
+                vsearch = urllib.parse.quote(vsearch)
+                for vsearch_prefix in ['/-/-', '/-/-/2', '/-/-/3', '/-/-/4', '/-/-/5', '/-/-/6']:
                     newPossibilities = 0
                     
-                    # search_dict = {'q':vsearch,'selTipo':selType,'int_idioma':LegendasTV.SearchLang.ALL}
-                    # search_dict = {'q':vsearch,'selTipo':selType,'int_idioma':LegendasTV.SearchLang.ALL}
-                    # search_data = urllib.urlencode(search_dict)
-                    vsearch = urllib.parse.quote(vsearch)
-                    
-                    if Debug < 1:
+                    if Debug < 2:
                         local.output+='. '
                     else:
-                        local.output+="Searching for subtitles with: "+vsearch+", Type "+str(selType)+" "+ltvpage+'\n'
+                        local.output+="Searching for subtitles with: "+vsearch+" , "+vsearch_prefix+'\n'
                     
-                    request = urllib.request.Request(self.base_url+'/util/carrega_legendas_busca/termo:'+vsearch+ltvpage)
+                    request = urllib.request.Request(self.searh_url + vsearch + vsearch_prefix)
                     try:
-                        response = urllib.request.urlopen(request, timeout=15)
+                        response = urllib.request.urlopen(request, timeout=ltv_timeout)
                         page = response.read()
+                        
                     except:
-                        if Debug > 2:
+                        if Debug > 1:
                             local.output+='Search timedout, retrying\n'
                         try:
-                            response = urllib.request.urlopen(request, timeout=15)
+                            response = urllib.request.urlopen(request, timeout=ltv_timeout)
                             page = response.read()
                         except:
-                            if Debug > 2:
-                                local.output+='! Error, searching timedout\n'
-                            return False
-                    
+                            if Debug > 0:
+                                local.output+='Search timedout again, retrying\n'
+                            try:
+                                response = urllib.request.urlopen(request, timeout=ltv_timeout*2)
+                                page = response.read()
+                            except:
+                                if Debug > -1:
+                                    local.output+='! Error, searching timedout 3 times\n'
+                                    local.output+=self.searh_url + vsearch + vsearch_prefix+'\n'
+                                with lock:
+                                    statistics['Failed'] += 1
+                                return False
+                        
                     soup = BeautifulSoup(page)
 
-                    div_results = soup.find('div',{'class':'gallery clearfix list_element'}).findAll('article',recursive=False)
+                    div_results = soup.find('div',{'class':'gallery clearfix list_element'})
+                    if div_results:
+                        div_results = div_results.findAll('article',recursive=False)
                     if not div_results:
                         if Debug > 2:
                             local.output+='No results\n'
@@ -355,7 +373,7 @@ class LegendasTV:
                                 continue
                             
                             ## Get the language
-                            tmpregex = re.search('/img/\w*/(?:icon|flag)_(\w+)\.(gif|jpg|jpeg|png)',flag)
+                            tmpregex = re.search('/\w*/(?:icon|flag)_(\w+)\.(gif|jpg|jpeg|png)',flag)
                             
                             if not tmpregex or tmpregex.lastindex<2:
                                 local.output+='#### Error parsing flag: '+flag+' ####\n'
@@ -409,6 +427,8 @@ class LegendasTV:
         if len(list_possibilities) == 0:
             if Debug > 2:
                 local.output+='No subtitles found\n'
+            with lock:
+                statistics['NoSubs'] += 1
             return False
             
         # Calculate similarity for every possibility
@@ -483,12 +503,14 @@ class LegendasTV:
         final_list = sorted(list_possibilities, key=lambda k: k['%'], reverse=True)
         
         for idx, possibility in enumerate(final_list):
-            if Debug > 2:
-                local.output+='Chance '+str(idx)+', '+str(possibility['%'])+'%%, '+possibility['language']+', '+possibility['release']+'\n'
+            if Debug > 1:
+                local.output+='Chance '+str(idx)+', '+str(possibility['%'])+'%, '+possibility['language']+', '+possibility['release']+'\n'
         
         if final_list[0]['language'] not in local.wanted_languages:
             if Debug > 2:
                 local.output+='\n-- Best subtitle already present --\n\n'
+            with lock:
+                statistics['NoBest'] += 1
             return False
         
         return final_list[0]
@@ -497,7 +519,7 @@ class LegendasTV:
     def download(self, subtitle):
         download_id = subtitle['id']
         if download_id:
-            url_request = self.base_url+'/downloadarquivo/'+download_id
+            url_request = self.download_url+download_id
             if Debug == 0:
                 local.output+='Download'
             if Debug > 2:
@@ -505,25 +527,35 @@ class LegendasTV:
                 local.output+='Downloading '+subtitle['language']+', '+subtitle['release']+'\n'
             request =  urllib.request.Request(url_request)
             try:
-                response = urllib.request.urlopen(request, timeout=20)
+                response = urllib.request.urlopen(request, timeout=ltv_timeout*1.5)
                 legenda = response.read()
             except:
-                if Debug > 2:
+                if Debug > 1:
                     local.output+="Download timedout, retrying\n"
                 try:
-                    response = urllib.request.urlopen(request, timeout=20)
+                    response = urllib.request.urlopen(request, timeout=ltv_timeout*2)
                     legenda = response.read()
                 except:
-                    if Debug > 2:
-                        local.output+="! Error, download timedout\n"
-                    return False
-            
-            if 'Content-Disposition' in response.info():
+                    if Debug > 0:
+                        local.output+="Download timedout again, retrying\n"
+                    try:
+                        sleep(5)
+                        response = urllib.request.urlopen(request, timeout=ltv_timeout*2)
+                        legenda = response.read()
+                    except:
+                        if Debug > -1:
+                            local.output+="! Error, download timedout 3 times\n"
+                        with lock:
+                            statistics['Failed'] += 1
+                        return False
+                    
+            localName = ""
+            if 'Content-Disposition' in response.info() and "filename=" in response.info()['Content-Disposition']:
                 # If the response has Content-Disposition, we take file name from it
                 localName = response.info()['Content-Disposition'].split('filename=')[1]
                 if localName[0] == '"' or localName[0] == "'":
                     localName = localName[1:-1]
-
+                
             if len(localName)>4:
                 self.archivename= os.path.join(self.download_path, str(localName))
             else:
@@ -568,8 +600,6 @@ class LegendasTV:
                 if Debug > -1:
                     local.output+='! Error, Error opening archive: '+self.archivename+'\n'
                     local.output+='UNRAR must be available on console\n'
-                with lock:
-                    statistics['Failed'] += 1
                 return False
 
         language_compensation = -1
@@ -590,12 +620,13 @@ class LegendasTV:
             unique_compensation = 15
 
         for srtname in files:
+
             points = 100 - language_compensation + unique_compensation
 
             testname = srtname.filename.lower()
             if not testname.endswith(tuple(valid_subtitle_extensions)+('rar', 'zip')):
-                #if Debug > 2:
-                #    print 'Non Sub file: ' + str(srtname)
+                if Debug > 2:
+                    local.output+='Non Sub file: ' + str(srtname)+'\n'
                 continue
 
             if Debug > 2:
@@ -646,7 +677,7 @@ class LegendasTV:
         if Debug > 2:
             local.output+='-------\n'
 
-        if points<1:
+        if points<1 or not current_maxfile:
             if Debug > -1:
                 local.output+='! Error: No valid subs found on archive\n'
             with lock:
@@ -674,6 +705,7 @@ class LegendasTV:
         ## Extracting
         for fileinfo in extract:
             fileinfo.filename = os.path.basename(fileinfo.filename)
+            
             if Debug > 2:
                 local.output+='Extracting file: '+fileinfo.filename+'\n'
 
@@ -880,163 +912,108 @@ def deNormalizeQuality(quality):
         return ['x264', 'h264']
     return [quality]
 
-# Searchs for common 2-words tags and merges them into one
-def mergeTags(search_string):
-    out_array = []
-    jump = False
-    for idx, tag in list(enumerate(search_string)):
-        if jump:
-            jump = False
-            continue
+
+def getAppendRating(fullpath):
+    global count, Debug
+    fullFilename = os.path.abspath(fullpath)
+    dirpath, foldername = os.path.split(fullFilename)
+
+    changed = False
+
+    tmpregex = re.search('([^\(\)\[\]]+)(?:\((\d{4})(?:\-\d{2,4})?\))\ ?(?:\[([\d\.]+)\])?',foldername)
+
+    # Only process movie folder names with year
+    if tmpregex is None or tmpregex.lastindex<2:
+        if Debug>0:
+            print("No movie folder: "+foldername)
+        return fullFilename
+
+    if count>25:
+        print('Too much iMDB-Ratings. Sleeping 2 minutes')
+        time.sleep(110)
         
-        if Debug > 2:
-            local.output+='Analyzing '+tag+'\n'
-            
-        tag = normalizeTags(tag)
-        
-        # Always keep last one, no merging possible
-        if idx == len(search_string) -1:
-            out_array.append(tag)
-            break
+    year = ''
+    rating= ''
+    # Get the download ID
+    movie = tmpregex.group(1).strip()
+    #if tmpregex.lastindex>1:
+    year = tmpregex.group(2).strip()
+    #else:
+    #    data = urllib.parse.urlencode({"q":movie,"yg":0})
 
-        if tag in ['directors'] and search_string[idx+1] == 'cut':
-            out_array.append('directors')
-            jump = True
-            continue
+    if tmpregex.lastindex>2:
+        rating = tmpregex.group(3).strip()
 
-        if tag in ['unrated', 'extended', 'special', 'directors' ] and search_string[idx+1] == 'edition':
-            out_array.append(tag)
-            jump = True
-            continue
-            
-        out_array.append(tag)
+    data = urllib.parse.urlencode({"q":movie,"year":year})
 
-    if Debug > 2:
-        local.output+='done\n'
-        local.output+=str(out_array)+'\n'
-        
+    url = 'http://deanclatworthy.com/imdb/'
 
-def parseFileName(filename):
-    global lock
-    garbage = [x.lower() for x in ['Unrated', 'DC', 'Dual', 'VTV', 'eng', 'subbed', 'artsubs', 'sample', 'ExtraTorrentRG', 'StyLish', 'Release' ]]
-    video_quality = [x.lower() for x in ['HDTV', 'XviD', 'DivX', 'x264', 'BluRay', 'BRip', 'BRRip', 'BDRip', 'DVDrip', 'DVD', 'AC3', 'DTS', 'TS', 'R5', 'R6', 'DVDScr', 'PROPER', 'REPACK' ]]
-    video_size = [x.lower() for x in ['480', '720', '1080']]
-    release_groups = [x.lower() for x in known_release_groups]
-    video_extras = [x.lower() for x in ['unrated', 'extended', 'special', 'directors' ]]
+    url = url + "?" + data
+
+    if Debug > 0:
+        print('Searching for: '+url)
+
+    try:
+        count+=1
+        response = urllib.request.urlopen(url, timeout=ltv_timeout)
+    except:
+        if Debug > 0:
+            print('imdb timedout, retrying')
+        try:
+            count+=1
+            response = urllib.request.urlopen(request, timeout=ltv_timeout)
+        except Exception:
+            if Debug > -1:
+                print('! Error, imdb timeout?')
+            return fullpath
+
+    the_page = response.read().decode('utf-8')
+
+    data = json.loads(the_page)
+
+    if Debug > 0:
+        print('Got imdb: '+str(data))
     
-    data = {}
-    data.clear()
-    data['videoTitle'] = []
-    data['videoSubTitle'] = []
-    data['year'] = []
-    data['season'] = []
-    data['episode'] = []
-    data['group'] = []
-    data['quality'] = []
-    data['size'] = []
-    data['extras'] = []
-    data['unknown'] = []
+    if not 'year' in data.keys() or '/' in data["year"]:
+        print("No rating found for: " + foldername)
+        return fullFilename
 
-    search_string = filename.lower()
-    search_string = re.split('[\ \.\-\_\[\]\&\(\)]', search_string)
+    if len(year) < 1:
+        year = data["year"]
+        changed = True
 
-    # Removing empty strings
-    search_string = [ st for st in search_string if st ]
+    if 'rating' in data.keys() and rating != data["rating"] and not '/' in data["rating"]:
+        print("Rating changed for: " + movie + ", " + rating + " to " + data["rating"])
+        rating = data["rating"]
+        changed = True
 
-    normalizeTags(search_string)
+    if changed:
+        newName = movie
+        if len(year) > 1:
+            newName = newName + " ("+year+")"
+        if len(rating) > 1:
+            newName = newName + " ["+rating+"]"
 
-    # Removing Extensions
-    if search_string[-1] in valid_extension_modifiers:
-        search_string.pop()
-    if search_string[-1] in valid_video_extensions:
-        search_string.pop()
-    if search_string[-1] in valid_video_extensions:
-        search_string.pop()
+        newFullPath = os.path.abspath(os.path.join(dirpath, newName))
 
-    # Clean first word if number
-    #if re.match("^\d\d$", search_string[0]):
-    #    search_string.pop(0)
+        try:
+            os.rename(fullFilename, newFullPath)
+        except Exception:
+            pass
 
-    # Removing Garbage
-    for idx, val in reversed(list(enumerate(search_string))):
-        if val in garbage:
-            search_string.pop(idx)
-            continue
-    
-    if len(search_string)==0:
-        if Debug > -1:
-            local.output+='! Error, this filename is just garbage: '+filename+'\n'
-        with lock:
-            statistics['Failed'] += 1
-        return False
-    if Debug > 2:
-        local.output+='Parsing file: '+filename+'\n'
 
-    sizeRegex = re.compile("("+'|'.join(video_size)+")(i|p)?", re.I)
+        if not os.path.isdir(newFullPath):
+            if Debug > -1:
+                print("Error renaming imdb. File in use? " + newName)
+            return fullFilename
+        else:
+            if Debug > 0:
+                print("Renamed with imdb rating: " + newName)
+            return newFullPath
+    else:
+        print("Rating didn't change for: " + foldername)
+    return fullFilename
 
-    possibleGroup = search_string[0]
-    tagFound=0
-    for item in search_string:
-        
-        # found season and episode tag
-        if re.match("[s]?\d?\d[xe]\d\d([xe]\d\d)?$", item, re.I):
-            data['season']=re.sub("[s]?0?([1-9]?\d)[xe](\d\d)([xe](\d\d))?", '\\1', item)
-            data['episode']=re.sub("[s]?0?([1-9]?\d)[xe](\d\d)([xe](\d\d))?", '\\2', item)
-            tagFound = 1
-            continue
-
-        # 2CDs video found
-        if re.match("^cd\d$", item, re.I):
-            data['quality'].append('2cd')
-            data['quality'].append(item)
-            tagFound = 1
-            continue
-
-        # found well-known group
-        if item in release_groups:
-            data['group'].append(item)
-            tagFound = 1
-            continue
-
-        # found generic quality tag
-        if item in video_quality:
-            data['quality'].append(item)
-            tagFound = 1
-            continue
-
-        # found video resolution tag
-        if sizeRegex.match(item):
-            if size:
-                with lock:
-                    statistics['Errors'] += 1
-                if Debug > 2:
-                    local.output+='! Error, 2 Sizes in file?!?! '+size+' & '+item+'\n'
-            data['size'].append(sizeRegex.sub('\\1', item))
-            tagFound = 1
-            continue
-        
-        # found Year
-        if re.match("\d{4}", item):
-            data['year'].append(item)
-            tagFound = 1
-            continue
-
-        if not tagFound:
-            data['videoTitle'].append(item)
-            if re.match("^\d$", item):
-                tagFound = 2
-            continue
-            # After a number, consider the rest as subtitle
-        elif tagFound == 2:
-            data['videoSubTitle'].append(item)
-            continue
-
-        # Last unknown is usually the release group
-        data['unknown'].append(item)
-
-        continue
-
-    return data
 
 # Threaded function: grab from queue and analyze
 def ltvdownloader(videosQ):
@@ -1247,7 +1224,7 @@ def ltvdownloader(videosQ):
                 local.output+='------------------\n'
 
             subtitle = ltv.search(videoTitle, videoSubTitle, year, season, episode, group, size, quality)
-            if not subtitle or subtitle['%'] < confidence_threshold:
+            if subtitle and subtitle['%'] < confidence_threshold:
                 with lock:
                     if local.wanted_languages == preferred_languages:
                         statistics['NoSubs'] += 1
@@ -1255,48 +1232,58 @@ def ltvdownloader(videosQ):
                         statistics['NoBest'] += 1
 
             if not subtitle:
-                if local.wanted_languages == preferred_languages:
-                    if Debug > -1:
-                        local.output+='No subtitles found\n'
-                else:
-                    if Debug > -1:
-                        local.output+='No better subtitles found\n'
-                continue
+                with lock:
+                    if local.wanted_languages == preferred_languages:
+                        statistics['NoSubs'] += 1
+                        if Debug > -1:
+                            local.output+='No subtitles found\n'
+                    else:
+                        statistics['NoBest'] += 1
+                        if Debug > -1:
+                            local.output+='No better subtitles found\n'
+                    continue
+            
             if subtitle['%'] < confidence_threshold:
                 if Debug > -1:
                     local.output+='Only bad subtitles, similiarity: '+str(subtitle['%'])+'\n'
                 continue
                 
-            if ltv.download(subtitle):
-                if Debug == 0:
-                    local.output+='ed: '+subtitle['language']
-                ltv.extract_sub(dirpath, originalFilename, group, size, quality, subtitle['language'])
-                if Debug == 0:
-                    local.output+=', '+subtitle['release']+'\n'
+            if not ltv.download(subtitle):
+                if Debug > -1:
+                    local.output+='. Failed to download subtitle: '+subtitle['release']+'\n'
                 continue
-
-            with lock:
-                if local.wanted_languages == preferred_languages:
-                    statistics['NoSubs'] += 1
-                else:
-                    statistics['NoBest'] += 1
-
-            if Debug > -1:
-                local.output+='Failed to download subtitle: '+subtitle['release']+'\n'
-
+            
+            if Debug == 0:
+                local.output+='ed: '+subtitle['language']
+            ltv.extract_sub(dirpath, originalFilename, group, size, quality, subtitle['language'])
+            if Debug == 0:
+                local.output+=', '+subtitle['release']+'\n'
             continue
-        
+
+
         except queue.Empty:
             #print('Waiting for jobs for '+str(threading.current_thread().getName()))
             if Done:
                 return
-            time.sleep(random.uniform(1.5, 4.0))
+            time.sleep(random.uniform(1.0, 5.0))
             pass
         except:
             print('print_exc():')
             traceback.print_exc(file=sys.stdout)
             return
-        
+
+
+## Main starts here
+## Main starts here
+## Main starts here
+## Main starts here
+## Main starts here
+## Main starts here
+## Main starts here
+## Main starts here
+## Main starts here
+## Main starts here
+## Main starts here
 ## Main starts here
 
 if __name__ == '__main__':
@@ -1355,6 +1342,7 @@ if __name__ == '__main__':
 
     OriginalInputFinished = False
 
+    count=0
     # Parsing all arguments (Files)
     for originalFilename in input_string:
         dirpath=''
@@ -1369,7 +1357,7 @@ if __name__ == '__main__':
             recursive_folders = True
             continue
 
-        if originalFilename == '-DI':
+        if originalFilename == '-OI':
             OriginalInputFinished = True
             continue
 
@@ -1399,6 +1387,7 @@ if __name__ == '__main__':
                     local.output+='Single argument: Forcing search, ignore existing subs\n'
             
         elif os.path.isdir(originalFilename):
+
             if not recursive_folders:
                 if OriginalInputFinished:
                     if Debug > 2:
@@ -1412,6 +1401,10 @@ if __name__ == '__main__':
             else:
                 if Debug > 0:
                     print('Recursing directory: %s' % (os.path.abspath(originalFilename)))
+
+            if iMDBRating:
+                originalFilename = getAppendRating((os.path.abspath(originalFilename)))
+
             statistics['Folders'] += 1
             for files in os.listdir(originalFilename):
                 input_string.append(os.path.join(originalFilename, files))
@@ -1437,13 +1430,15 @@ if __name__ == '__main__':
             #dirpath = os.getcwd()
             continue
 
+        #if not iMDBRating:
         videosQ.put(os.path.abspath(originalFilename))
-    
+
     while not videosQ.empty():
         time.sleep(1)
-    videosQ.join()
 
+    videosQ.join()
     Done=True
+
     if Debug > 2:
         print('------------------')
     
