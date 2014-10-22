@@ -3,7 +3,7 @@
 
 #### User Configurations ####
 
-## Fill yours - This is OPTIONAL for now! The site doesn't require login anymore
+## Fill yours - This is OPTIONAL for now. The site doesn't require login to download
 ltv_username = ''
 ltv_password = ''
 
@@ -14,7 +14,11 @@ default_folder = '.'
 preferred_languages = ['pt','br','en']
 rename_subtitle = True
 append_language = True
+append_confidence = False
 clean_old_language = True
+
+# Stop if #-Lang is already present: 1-PT, 2-PT/BR, 3-EN/PT/BR etc
+stopSearchWhenExistsLang = 1
 
 # Keeps a subtitle with the same name of the video (hard)linking to the best available subtitle. Occupies no space
 hardlink_without_lang_to_best_sub = True
@@ -28,11 +32,11 @@ recursive_folders = False
 # Append or update IMDB rating at the end of movie folders
 # Folders must have the movie name followed by the year inside parenthesis, otherwise they are ignored
 # eg: "Milk (2008)" becomes: "Milk (2008) [7.7]"
-iMDBRating = True
+append_iMDBRating = True
 
 # Rename and clean videos and accompanying files from this garbage-tags 
 clean_original_filename = True
-clean_name_from = ['VTV','www.torentz.3xforum.ro','MyTV']
+clean_name_from = ['VTV','www.torentz.3xforum.ro','MyTV','rarbg']
 
 # No need to change those, but feel free to add/remove some
 valid_subtitle_extensions = ['srt','txt','aas','ssa','sub','smi']
@@ -43,7 +47,7 @@ Debug = 0
 
 ####### End of regular user configurations #######
 
-known_release_groups = ['LOL','2HD','ASAP','FQM','Yify','killers','fum','fever','p0w4','FoV','TLA','refill','notv','reward','bia','maxspeed']
+known_release_groups = ['LOL','2HD','ASAP','FQM','Yify','killers','fum','fever','p0w4','FoV','TLA','refill','notv','reward','bia','maxspeed','SickBeard']
 
 ## Set this flag using -f as parameter, to force search and replace all subtitles. 
 ## This option is implied when only one argument is passed (single file dragged & dropped)
@@ -125,7 +129,8 @@ try:
 except ImportError:
     print('Python module needed: BeautifulSoup4 / bs4')
     print('\nPress any key to exit...')
-    junk = getch()
+    if Debug > 2:
+        junk = getch()
     sys.exit()
     
 try:
@@ -133,7 +138,8 @@ try:
 except ImportError:
     print('Python module needed: rarfile')
     print('\nPress any key to exit...')
-    junk = getch()
+    if Debug > 2:
+        junk = getch()
     sys.exit()
 
 
@@ -540,14 +546,28 @@ class LegendasTV:
                         local.output+="Download timedout again, retrying\n"
                     try:
                         sleep(5)
-                        response = urllib.request.urlopen(request, timeout=ltv_timeout*2)
+                        response = urllib.request.urlopen(request, timeout=ltv_timeout*3)
                         legenda = response.read()
                     except:
-                        if Debug > -1:
-                            local.output+="! Error, download timedout 3 times\n"
-                        with lock:
-                            statistics['Failed'] += 1
-                        return False
+                        if Debug > 0:
+                            local.output+="Download timedout again, retrying\n"
+                        try:
+                            sleep(5)
+                            response = urllib.request.urlopen(request, timeout=ltv_timeout*3)
+                            legenda = response.read()
+                        except:
+                            if Debug > 0:
+                                local.output+="Download timedout again, retrying\n"
+                            try:
+                                sleep(5)
+                                response = urllib.request.urlopen(request, timeout=ltv_timeout*5)
+                                legenda = response.read()
+                            except:
+                                if Debug > -1:
+                                    local.output+="! Error, download timedout 5 times\n"
+                                with lock:
+                                    statistics['Failed'] += 1
+                                return False
                     
             localName = ""
             if 'Content-Disposition' in response.info() and "filename=" in response.info()['Content-Disposition']:
@@ -602,12 +622,12 @@ class LegendasTV:
                     local.output+='UNRAR must be available on console\n'
                 return False
 
-        language_compensation = -1
+        language_compensation = 0
         for index, tmp in enumerate(local.wanted_languages):
             if tmp == language:
                 language_compensation = 15*index
                 break
-        if language_compensation == -1:
+        if language_compensation == 0:
             local.output+='No language? '+language+'\n'
 
         files = archive.infolist()
@@ -632,10 +652,10 @@ class LegendasTV:
             if Debug > 2:
                 local.output+='Analyzing: '+str(testname)+'\n'
 
-            if language not in testname:
-                if Debug > 2:
-                    local.output+='-1, Language not in FileName: '+language+'\n'
-                points-=1
+            # if language not in testname:
+            #     if Debug > 2:
+            #         local.output+='-1, Language not in FileName: '+language+'\n'
+            #     points-=1
                 
             if group not in testname:
                 if Debug > 2:
@@ -725,6 +745,10 @@ class LegendasTV:
             
             if append_language:
                 dest_filename = os.path.splitext(dest_filename)[0]+'.'+language+os.path.splitext(dest_filename)[1]
+                
+            if append_confidence:
+                dest_filename = os.path.splitext(dest_filename)[0]+'.'+str(current_maxpoints+language_compensation)+os.path.splitext(dest_filename)[1]
+            
             
             if Debug > 2:
                 local.output+='Extracting subtitle as: '+dest_filename+'\n'
@@ -884,7 +908,7 @@ def normalizeTags(tag):
     tag = tag.lower()
     if tag in ['bluray', 'blueray', 'brip', 'brrip', 'bdrip']:
         return 'bluray'
-    if tag in ['dvdrip', 'dvd']:
+    if tag in ['dvdrip', 'dvd', 'sd']:
         return 'dvd'
     if tag in ['x264', 'h264']:
         return 'x264'
@@ -906,14 +930,14 @@ def deNormalizeQuality(quality):
     quality = quality.lower()
     if quality in ['bluray', 'blueray', 'brip', 'brrip', 'bdrip']:
         return ['bluray', 'blueray', 'brip', 'brrip', 'bdrip']
-    if quality in ['dvdrip', 'dvd']:
-        return ['dvdrip', 'dvd']
+    if quality in ['dvdrip', 'dvd', 'sd']:
+        return ['dvdrip', 'dvd', 'sd']
     if quality in ['x264', 'h264']:
         return ['x264', 'h264']
     return [quality]
 
 
-def getAppendRating(fullpath):
+def getAppendRating(fullpath, withYear=True, search=False, imdbID=0):
     global count, Debug
     fullFilename = os.path.abspath(fullpath)
     dirpath, foldername = os.path.split(fullFilename)
@@ -928,39 +952,52 @@ def getAppendRating(fullpath):
             print("No movie folder: "+foldername)
         return fullFilename
 
-    if count>25:
-        print('Too much iMDB-Ratings. Sleeping 2 minutes')
-        time.sleep(110)
+    # if count>25:
+    #     print('Too much iMDB-Ratings. Sleeping 2 minutes')
+    #     time.sleep(110)
+    # count+=1
         
     year = ''
     rating= ''
     # Get the download ID
     movie = tmpregex.group(1).strip()
-    #if tmpregex.lastindex>1:
+    # if search:
+    #     movie = movie.replace(" and ", " ")
+    #     movie = movie.replace(" at ", " ")
+        
     year = tmpregex.group(2).strip()
-    #else:
-    #    data = urllib.parse.urlencode({"q":movie,"yg":0})
+    if len(year) <= 1:
+        withYear = False
 
     if tmpregex.lastindex>2:
         rating = tmpregex.group(3).strip()
 
-    data = urllib.parse.urlencode({"q":movie,"year":year})
-
-    url = 'http://deanclatworthy.com/imdb/'
-
+    if imdbID:
+        data = urllib.parse.urlencode({"i":imdbID})
+        
+    elif search:
+        if withYear:
+            data = urllib.parse.urlencode({"s":movie,"y":year})
+        else:
+            data = urllib.parse.urlencode({"s":movie})
+    else:
+        if withYear:
+            data = urllib.parse.urlencode({"t":movie,"y":year})
+        else:
+            data = urllib.parse.urlencode({"t":movie})
+    url = 'http://www.omdbapi.com/'
+    
     url = url + "?" + data
 
     if Debug > 0:
         print('Searching for: '+url)
-
+        
     try:
-        count+=1
         response = urllib.request.urlopen(url, timeout=ltv_timeout)
     except:
         if Debug > 0:
             print('imdb timedout, retrying')
         try:
-            count+=1
             response = urllib.request.urlopen(request, timeout=ltv_timeout)
         except Exception:
             if Debug > -1:
@@ -970,21 +1007,47 @@ def getAppendRating(fullpath):
     the_page = response.read().decode('utf-8')
 
     data = json.loads(the_page)
-
     if Debug > 0:
         print('Got imdb: '+str(data))
-    
-    if not 'year' in data.keys() or '/' in data["year"]:
-        print("No rating found for: " + foldername)
+        
+    if search:
+        if 'Search' in data.keys():
+            data["Search"] = [item for item in data["Search"] if item["Type"]=="movie"]
+            
+            if len(data["Search"])==1 and 'imdbID' in data["Search"][0].keys():
+                if Debug > 0:
+                    print("Found the movie: " + data["Search"][0]["Title"])
+                return getAppendRating(fullpath, True, False, data["Search"][0]["imdbID"])
+            else: 
+                print("Multiple movies found with similar name: " + foldername)
+                return fullFilename
+        elif withYear:
+            if Debug > 0:
+                print("No movies found. Searching without year")
+            return getAppendRating(fullpath, False, True, 0)
+        
+        print("No movie found while searching for: " + foldername)
         return fullFilename
+        
+    
+    if not 'Year' in data.keys() or '/' in data["Year"]:
+        if Debug > 0:
+            print("No exact movie found. Searching")
+        return getAppendRating(fullpath, True, True, 0)
+        # if withYear:
+        #     print("No rating found. Searching without year")
+        #     return getAppendRating(fullpath, False)
+        # print("No rating found for: " + foldername + ". The folder name must be wrong")
+        # return fullFilename
 
-    if len(year) < 1:
-        year = data["year"]
+    if year != data["Year"]:
+        print("Year changed for: " + movie + ", " + year + " to " + data["Year"])
+        year = data["Year"]
         changed = True
 
-    if 'rating' in data.keys() and rating != data["rating"] and not '/' in data["rating"]:
-        print("Rating changed for: " + movie + ", " + rating + " to " + data["rating"])
-        rating = data["rating"]
+    if 'append_iMDBRating' in data.keys() and rating != data["append_iMDBRating"] and not '/' in data["append_iMDBRating"]:
+        print("Rating changed for: " + movie + ", " + rating + " to " + data["append_iMDBRating"])
+        rating = data["append_iMDBRating"]
         changed = True
 
     if changed:
@@ -1026,8 +1089,13 @@ def ltvdownloader(videosQ):
             if local.output:
                 videosQ.task_done()
                 with lock:
-                    print(local.output)
-                    #print('remaining items: '+str(videosQ.qsize()))
+                    try:
+                        print(local.output)
+                        #print('remaining items: '+str(videosQ.qsize()))
+                    except Exception:
+                        print(local.output.encode('utf-8','ignore'))
+                        pass
+                        
             local.output=''
             originalFilename= videosQ.get(False)
 
@@ -1069,14 +1137,14 @@ def ltvdownloader(videosQ):
             local.wanted_languages = preferred_languages[:]
             
             # Check with language
-            if append_language and not ForceSearch:
+            if append_language:
                 for idx, lang in reversed(list(enumerate(local.wanted_languages))):
                     tmp = os.path.splitext(os.path.join(dirpath, originalFilename))[0] + '.'+lang+'.s*'
                     for sublang in glob.glob(re.sub(r'(?<!\[)\]', '[]]', re.sub(r'\[', '[[]', tmp))):
                         existSubs.append(sublang)
                         if Debug > 1:
                             local.output+='Found a \''+lang+'\' subtitle: '+sublang+'\n'
-                        if idx==0:
+                        if idx<stopSearchWhenExistsLang:
                             local.wanted_languages = []
                         else:
                             local.wanted_languages = local.wanted_languages[0:idx]
@@ -1402,7 +1470,7 @@ if __name__ == '__main__':
                 if Debug > 0:
                     print('Recursing directory: %s' % (os.path.abspath(originalFilename)))
 
-            if iMDBRating:
+            if append_iMDBRating:
                 originalFilename = getAppendRating((os.path.abspath(originalFilename)))
 
             statistics['Folders'] += 1
@@ -1430,7 +1498,7 @@ if __name__ == '__main__':
             #dirpath = os.getcwd()
             continue
 
-        #if not iMDBRating:
+        #if not append_iMDBRating:
         videosQ.put(os.path.abspath(originalFilename))
 
     while not videosQ.empty():
@@ -1446,7 +1514,7 @@ if __name__ == '__main__':
     if Debug > -1:
         #print 'Videos: %d, Shows: %d, Movies: %d, NotVideos: %d, Folders: %d' % (statistics['Videos'], statistics['Shows'], statistics['Movies'], statistics['NotVideos'], statistics['Folders'])
         
-        print('\n\nFinal statistics:', end="")
+        print('\n\nFinal statistics:')
         print('Failed!! %d, Errors: %d' % (statistics['Failed'], statistics['Errors'] ))
         
         print('\nFolders analyzed: %d' % (statistics['Folders']))
@@ -1458,7 +1526,8 @@ if __name__ == '__main__':
         print('\nFinal subtitles status in parsed library:')
         print('Best: %d,  Upgradeable: %d,  No Subs: %d' % (statistics['Best'], statistics['NoBest'], statistics['NoSubs']))
 
-    print('\nPress any key to exit...')
-    junk = getch()
-
+    if Debug > -1:
+        print('\nPress any key to exit...')
+        junk = getch()
+        
     sys.exit()
