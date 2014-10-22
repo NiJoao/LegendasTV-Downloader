@@ -13,7 +13,7 @@ Please, use the **issues** tab to make suggestions and file bugs.
 
 1. Install python v3 and the modules: BeautifulSoup4, rarfile
 2. Make sure UNRAR is in your PATH variable and available on console 
-3. Open the file 'ltv-downloader.py' with any text editor to edit the initial configuration as you please
+3. Optionally open the file 'ltv-downloader.py' with any text editor to edit the initial configuration
 4. Drag-and-Drop videos or folders on 'ltv-downloader.py'
 5. Enjoy!
 
@@ -45,23 +45,21 @@ ____
 * Download https://raw.github.com/NiJoao/LegendasTV-Downloader/master/ltv-downloader.py
 * Copy it to your Series folder, or any other place you wish acessible to drag-and-drop your movies collection
 * You can create shortcuts to the script in any folders you wish
-* Edit the file to configure it. Read next session for more info
+* Optionally edit the file to configure it. Read next session for more info
 * Install python v3 and the packages with the following methods
 
 ##### Linux Installation
 
-    sudo apt-get install unrar-free python3.3 python-pip python-dev build-essential
+    sudo apt-get install build-essential unrar-free python3 python3-pip python3-dev
     pip install beautifulsoup4 rarfile
 
 ##### Windows Installation
 
-* Download and install "Python 3.3.x Windows Installer" from http://www.python.org/download/
-* Add to the PATH Environment Variable: ** ;C:\Python33;C:\Python33\Scripts **
-* Download and run http://python-distribute.org/distribute_setup.py
-* Download and run https://raw.github.com/pypa/pip/master/contrib/get-pip.py
+* Download and install "Python 3.4.x Windows Installer" from http://www.python.org/download/
+* Make sure the Python folder is in the PATH Environment Variable, e.g.: ** ;C:\Python34 **
 * Open a command line (Win+R, cmd) and type:
   * pip install beautifulsoup4 rarfile
-* Download WinRar from http://www.rarlab.com/download.htm, extract the .exe file, and copy the unrar.exe to any folder on you PATH. Example: C:\Python33\Scripts
+* Download WinRar from http://www.rarlab.com/download.htm, extract the .exe file, and copy the unrar.exe to any folder on your PATH. E.g.: C:\Python34\
 
 ____
 
