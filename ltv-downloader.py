@@ -622,13 +622,14 @@ class LegendasTV:
                     local.output+='UNRAR must be available on console\n'
                 return False
 
-        language_compensation = 0
+        language_compensation = -1
         for index, tmp in enumerate(local.wanted_languages):
             if tmp == language:
                 language_compensation = 15*index
                 break
-        if language_compensation == 0:
+        if language_compensation == -1:
             local.output+='No language? '+language+'\n'
+            language_compensation = 0
 
         files = archive.infolist()
         srts = []
@@ -1005,7 +1006,7 @@ def getAppendRating(fullpath, withYear=True, search=False, imdbID=0):
             return fullpath
 
     the_page = response.read().decode('utf-8')
-
+    
     data = json.loads(the_page)
     if Debug > 0:
         print('Got imdb: '+str(data))
@@ -1045,9 +1046,9 @@ def getAppendRating(fullpath, withYear=True, search=False, imdbID=0):
         year = data["Year"]
         changed = True
 
-    if 'append_iMDBRating' in data.keys() and rating != data["append_iMDBRating"] and not '/' in data["append_iMDBRating"]:
-        print("Rating changed for: " + movie + ", " + rating + " to " + data["append_iMDBRating"])
-        rating = data["append_iMDBRating"]
+    if 'imdbRating' in data.keys() and rating != data["imdbRating"] and not '/' in data["imdbRating"]:
+        print("Rating changed for: " + movie + ", " + rating + " to " + data["imdbRating"])
+        rating = data["imdbRating"]
         changed = True
 
     if changed:
