@@ -143,6 +143,10 @@ except ImportError:
         junk = getch()
     sys.exit()
 
+if ltv_username is "USERNAME":
+    print('\nPlease edit ltv-downloader.py file and configure with your LTV\'s Username and Password...')
+    junk = getch()
+    sys.exit()
 
 
 def SameFile(file1, file2):
