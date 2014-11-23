@@ -5,7 +5,8 @@ Single-file script that scans a folder for videos and downloads subtitles for al
 
 NO user input needed, totally automatic.
 
-Works great for TV-Shows, but gets unsynced subtitles for some movies, depending on naming schemes on both the file and legendas.tv website.
+Works great for TV-Shows, but not that great for movies, depending on naming schemes on both the file and legendas.tv website.
+It also appends the IMDB Rating to the end of a Movie's Folder.
 
 Please, use the **issues** tab to make suggestions and file bugs.
 
@@ -13,8 +14,9 @@ Please, use the **issues** tab to make suggestions and file bugs.
 
 1. Install python v3 and the modules: BeautifulSoup4, rarfile
 2. Make sure UNRAR is in your PATH variable and available on console 
-3. Optionally open the file 'ltv-downloader.py' with any text editor to edit the initial configuration
-4. Drag-and-Drop videos or folders on 'ltv-downloader.py'
+3. Open the file 'ltv-downloader.py' with any text editor to edit the initial configuration:
+     Only your USERNAME and PASSWORD are required to be edited.
+4. Drag-and-Drop videos or folders on 'ltv-downloader.py' (or a shortcut of it, with extra arguments such as "-OnlyIMDBRating" to update Ratings without downloading subtitles)
 5. Enjoy!
 
 
@@ -45,7 +47,7 @@ ____
 * Download https://raw.github.com/NiJoao/LegendasTV-Downloader/master/ltv-downloader.py
 * Copy it to your Series folder, or any other place you wish acessible to drag-and-drop your movies collection
 * You can create shortcuts to the script in any folders you wish
-* Optionally edit the file to configure it. Read next session for more info
+* Edit the file to configure it. Read next session for more info
 * Install python v3 and the packages with the following methods
 
 ##### Linux Installation
