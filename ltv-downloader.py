@@ -3,9 +3,9 @@
 
 #### User Configurations ####
 
-## Fill yours - This is OPTIONAL for now. The site doesn't require login to download
-ltv_username = ''
-ltv_password = ''
+## Fill yours - This is again REQUIRED by the LTV website.
+ltv_username = 'USERNAME'
+ltv_password = 'pass'
 
 # Folder to scan when no arguments are passed
 default_folder = '.'
@@ -52,6 +52,7 @@ known_release_groups = ['LOL','2HD','ASAP','FQM','Yify','killers','fum','fever',
 ## Set this flag using -f as parameter, to force search and replace all subtitles. 
 ## This option is implied when only one argument is passed (single file dragged & dropped)
 ForceSearch=False
+OnlyIMDBRating = False
 
 ## LegendasTV timeout and number of threads to use. Increasing them too high may affect the website performance, please be careful
 ltv_timeout = 15
@@ -184,14 +185,14 @@ class LegendasTV:
             _method -> POST
         '''
         login_data = urllib.parse.urlencode({'data[User][username]':self.username, 'data[User][password]':self.password, '_method':'POST'})
-        request = urllib.request.Request(self.login_url,login_data)
+        request = urllib.request.Request(self.login_url,login_data.encode('utf-8'))
         try:
-            response = urllib.request.urlopen(request, timeout=ltv_timeout).read()
+            response = urllib.request.urlopen(request, timeout=ltv_timeout).read().decode('utf-8', 'ignore')
         except:
             if Debug > 0:
                 print('login timedout, retrying')
             try:
-                response = urllib.request.urlopen(request, timeout=ltv_timeout).read()
+                response = urllib.request.urlopen(request, timeout=ltv_timeout).read().decode('utf-8', 'ignore')
             except Exception:
                 if Debug > -1:
                     print('! Error, login timeout?')
@@ -632,6 +633,7 @@ class LegendasTV:
             language_compensation = 0
 
         files = archive.infolist()
+            
         srts = []
         current_maxpoints = 0
         current_maxfile = []
@@ -641,7 +643,6 @@ class LegendasTV:
             unique_compensation = 15
 
         for srtname in files:
-
             points = 100 - language_compensation + unique_compensation
 
             testname = srtname.filename.lower()
@@ -755,15 +756,13 @@ class LegendasTV:
                 local.output+='Extracting subtitle as: '+dest_filename+'\n'
             dest_fullFilename = os.path.join(dirpath, dest_filename)
             
-            try:
-                # fileinfo.filename = dest_filename
-                # archive.extract(fileinfo, dirpath)
-
+            try:               
                 fileContents = archive.read(fileinfo)
                 
                 f = open(dest_fullFilename, 'wb')
                 f.write(fileContents)
                 f.close()
+                
                 if Debug > 2:
                     local.output+='Subtitle saved with sucess in: '+dirpath+'!\n'
                 with lock:
@@ -1138,7 +1137,7 @@ def ltvdownloader(videosQ):
             local.wanted_languages = preferred_languages[:]
             
             # Check with language
-            if append_language:
+            if append_language and not ForceSearch:
                 for idx, lang in reversed(list(enumerate(local.wanted_languages))):
                     tmp = os.path.splitext(os.path.join(dirpath, originalFilename))[0] + '.'+lang+'.s*'
                     for sublang in glob.glob(re.sub(r'(?<!\[)\]', '[]]', re.sub(r'\[', '[[]', tmp))):
@@ -1383,14 +1382,14 @@ if __name__ == '__main__':
     ltv = LegendasTV(ltv_username, ltv_password)
 
     # Logging in Legendas.TV
-    # if not ltv.login():
-    #     if Debug > -1:
-    #         print '\nPress any key to exit...'
-    #     junk = getch()
-    #     sys.exit()
+    if not ltv.login():
+        if Debug > -1:
+            print('Press any key to exit...')
+        junk = getch()
+        sys.exit()
     
-    # if Debug > 0:
-    #     print 'Logged with success!'
+    if Debug > 0:
+        print('Logged with success!')
 
     input_string = sys.argv[1:]
     if len(input_string) == 0:
@@ -1432,6 +1431,10 @@ if __name__ == '__main__':
 
         if originalFilename == '-f':
             ForceSearch = True
+            continue
+
+        if originalFilename == '-OnlyIMDBRating':
+            OnlyIMDBRating = True
             continue
 
         if os.path.islink(originalFilename):
@@ -1499,8 +1502,8 @@ if __name__ == '__main__':
             #dirpath = os.getcwd()
             continue
 
-        #if not append_iMDBRating:
-        videosQ.put(os.path.abspath(originalFilename))
+        if not OnlyIMDBRating:
+            videosQ.put(os.path.abspath(originalFilename))
 
     while not videosQ.empty():
         time.sleep(1)
@@ -1515,7 +1518,7 @@ if __name__ == '__main__':
     if Debug > -1:
         #print 'Videos: %d, Shows: %d, Movies: %d, NotVideos: %d, Folders: %d' % (statistics['Videos'], statistics['Shows'], statistics['Movies'], statistics['NotVideos'], statistics['Folders'])
         
-        print('\n\nFinal statistics:')
+        print('\n\nFinal statistics:', end="")
         print('Failed!! %d, Errors: %d' % (statistics['Failed'], statistics['Errors'] ))
         
         print('\nFolders analyzed: %d' % (statistics['Folders']))
