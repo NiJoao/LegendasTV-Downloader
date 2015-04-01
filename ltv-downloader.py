@@ -5,7 +5,7 @@
 
 ## Fill yours - This is again REQUIRED by the LTV website.
 ltv_username = 'USERNAME'
-ltv_password = 'pass'
+ltv_password = 'PASS'
 
 # Folder to scan when no arguments are passed
 default_folder = '.'
@@ -15,7 +15,7 @@ preferred_languages = ['pt','br','en']
 rename_subtitle = True
 append_language = True
 append_confidence = False
-clean_old_language = True
+clean_old_language = False
 
 # Stop if #-Lang is already present: 1-PT, 2-PT/BR, 3-EN/PT/BR etc
 stopSearchWhenExistsLang = 1
@@ -47,7 +47,7 @@ Debug = 0
 
 ####### End of regular user configurations #######
 
-known_release_groups = ['LOL','2HD','ASAP','FQM','Yify','killers','fum','fever','p0w4','FoV','TLA','refill','notv','reward','bia','maxspeed','SickBeard']
+known_release_groups = ['LOL','2HD','ASAP','FQM','Yify','killers','fum','fever','p0w4','FoV','TLA','refill','notv','reward','bia','maxspeed'.'FiHTV','BATV','SickBeard']
 
 ## Set this flag using -f as parameter, to force search and replace all subtitles. 
 ## This option is implied when only one argument is passed (single file dragged & dropped)
@@ -63,33 +63,14 @@ thread_count = 5
 
 Done = False
 
-import http.cookiejar, urllib
-import re, os, sys, filecmp, tempfile, traceback, shutil, getpass, time, random
-import json
-import glob
+
+import os, sys, traceback
+import json, re
+import glob, filecmp, tempfile
+import signal, platform
+import threading, queue, time, random
 
 from zipfile import ZipFile
-from urllib.error import HTTPError, URLError
-from operator import itemgetter
-
-import  threading, queue
-lock = threading.Lock()
-local = threading.local()
-local.output = ''
-local.wanted_languages = []
-
-
-import signal
-def signal_handler(signal, frame):
-    global videosQ, Done
-    Done=True
-    videosQ.queue.clear()
-    print('Cleared List. Terminating in 5s')
-    time.sleep(5)
-    sys.exit()
-signal.signal(signal.SIGINT, signal_handler)
-
-import platform
 
 if(platform.system().lower().find("windows") > -1):
     if Debug > 2:
@@ -125,23 +106,66 @@ else:
     tty.setraw(sys.stdin.fileno())
     getch = sys.stdin.read(1)
 
+
+REQUIREMENTS = [ 'requests' , 'beautifulsoup4', 'rarfile' ]
+
 try:
+    import requests
     from bs4 import BeautifulSoup
-except ImportError:
-    print('Python module needed: BeautifulSoup4 / bs4')
-    print('\nPress any key to exit...')
-    if Debug > 2:
-        junk = getch()
-    sys.exit()
-    
-try:
     from rarfile import RarFile
-except ImportError:
-    print('Python module needed: rarfile')
-    print('\nPress any key to exit...')
-    if Debug > 2:
-        junk = getch()
+except:
+    import os, pip
+    pip_args = [ ]
+    # pip_args = [ '-vvv' ]
+    if 'http_proxy' in os.environ:
+        proxy = os.environ['http_proxy']
+        if proxy:
+            pip_args.append('--proxy')
+            pip_args.append(proxy)
+    pip_args.append('install')
+    for req in REQUIREMENTS:
+        pip_args.append( req )
+    print('Installing requirements: ' + str(REQUIREMENTS))
+    pip.main(pip_args)
+    # pip.main(initial_args = pip_args)
+ 
+    # do it again
+    try:
+        import requests
+        from bs4 import BeautifulSoup
+        from rarfile import RarFile
+        print('Sucessfully installed the required libraries\n')
+    except:
+        print('\nPython modules needed: beautifulsoup4, rarfile, requests')
+        print('We failled to install them automatically.')
+        print('\nTry running this with Admin Priviliges, or')
+        print('Run in a command prompt Admin Priviliges:\n')
+        print('pip install requests beautifulsoup4 rarfile')
+        print('\nPress any key to exit...')
+        if Debug > -1:
+            junk = getch()
+        sys.exit()
+
+
+
+def signal_handler(signal, frame):
+    global videosQ, Done
+    Done=True
+    videosQ.queue.clear()
+    print('Cleared List. Terminating in 5s')
+    time.sleep(5)
     sys.exit()
+signal.signal(signal.SIGINT, signal_handler)
+
+
+
+lock = threading.Lock()
+local = threading.local()
+local.output = ''
+local.wanted_languages = []
+
+
+
 
 if ltv_username is "USERNAME":
     print('\nPlease edit ltv-downloader.py file and configure with your LTV\'s Username and Password...')
@@ -156,6 +180,61 @@ def SameFile(file1, file2):
     except:
         return False
 os.path.samefile = SameFile
+
+def UpdateFile(file1, file2):
+    exc = ""
+    for x in [1, 2, 3]: 
+        try:
+            if not os.path.isfile(file1):
+                return False
+            
+            if not os.path.isfile(file2):
+                os.rename(file1, file2)
+                return True
+            
+            if SameFile(file1, file2):
+                os.remove(file1)
+                return True
+            
+            if os.path.getsize(file1) < 1500 and os.path.getsize(file2) > 1500:
+                os.remove(file1)
+                return True
+                
+            if os.path.getsize(file2) < 1500 and os.path.getsize(file1) > 1500:
+                os.remove(file2)
+                os.rename(file1, file2)
+                return True
+                
+            if os.path.getmtime(file1) < os.path.getmtime(file2):
+                os.remove(file1)
+                return True
+                
+            if os.path.getmtime(file2) < os.path.getmtime(file1):
+                os.remove(file2)
+                os.rename(file1, file2)
+                return True
+            
+            if os.path.getsize(file1) < os.path.getsize(file2):
+                os.remove(file1)
+                return True
+                
+            if os.path.getsize(file2) < os.path.getsize(file1):
+                os.remove(file2)
+                os.rename(file1, file2)
+                return True
+            
+            os.remove(file2)
+            os.rename(file1, file2)
+            return True
+            
+        except (Exception) as e:
+            exc = e
+            time.sleep(0.5)
+            pass
+    
+    print('\nSomething went wrong renaming files: '+str(type(exc))+'\n'+file1+'\nto:\n'+file2)
+    return False
+
 
 ## Takes car of everything related to the Website
 class LegendasTV:
@@ -174,54 +253,45 @@ class LegendasTV:
         #self.searh_url = self.base_url+'/busca/'
         self.searh_url = self.base_url+'/util/carrega_legendas_busca/'
         self.download_url = self.base_url+'/downloadarquivo/'
-
-        self.cookieJar = http.cookiejar.CookieJar()
-        self.opener= urllib.request.build_opener(urllib.request.HTTPCookieProcessor(self.cookieJar))
-        urllib.request.install_opener(self.opener)
-
+        
+        self.session = requests.Session()
+        self.session.auth = (ltv_username, ltv_password)
+        self.session.headers.update({'User-Agent': 'LegendasTV-Downloader at GitHub'})
+        self.session.mount("http://", requests.adapters.HTTPAdapter(max_retries=3))
+        
     ## Login in legendas.tv
     def login(self):
-        name="data[User][username]"
-        '''LoginForm:
-            data[User][username] -> max_length(15)
-            data[User][password] -> max_length(15)
-            chkLogin -> 0|1 (keep logged?)
-            _method -> POST
-        '''
-        login_data = urllib.parse.urlencode({'data[User][username]':self.username, 'data[User][password]':self.password, '_method':'POST'})
-        request = urllib.request.Request(self.login_url,login_data.encode('utf-8'))
+        
+        login_data= {'data[User][username]':self.username,'data[User][password]':self.password, '_method':'POST'}
+        
         try:
-            response = urllib.request.urlopen(request, timeout=ltv_timeout).read().decode('utf-8', 'ignore')
-        except:
-            if Debug > 0:
-                print('login timedout, retrying')
-            try:
-                response = urllib.request.urlopen(request, timeout=ltv_timeout).read().decode('utf-8', 'ignore')
-            except Exception:
-                if Debug > -1:
-                    print('! Error, login timeout?')
-                    print('print_exc():')
-                    traceback.print_exc(file=sys.stdout)
-                return False
-
-        if 'Dados incorretos' in response:
+            r = self.session.post(self.login_url, data=login_data, timeout=ltv_timeout)
+            r.raise_for_status()
+        except (Exception) as e:
             if Debug > -1:
-                print('! Error, wrong username or password ...')
+                print('! Error, loging in! '+str(type(e)))
             return False
-
+        
+        if "Usuário ou senha inválidos" in r.text:
+            if Debug > -1:
+                print('! Error, wrong login user/pass!')
+            return False
         return True
 
     ## Logout
     def logout(self):
-        request = urllib.request.Request(self.logout_url)
         try:
-            response = urllib.request.urlopen(request, timeout=ltv_timeout)
-        except:
+            r = self.session.get(self.logout_url, timeout=ltv_timeout)
+            r.raise_for_status()
+        except (Exception) as e:
+            if Debug > -1:
+                print('! Error, loging out! '+str(type(e)))
             return False
         return True
 
     ## Search and select best subtitle
     def search(self, videoTitle, videoSubTitle, year, season, episode, group, size, quality):
+        
         if Debug > 2:
             local.output+='------- Searching -------\n'
         if Debug > 2:
@@ -283,7 +353,9 @@ class LegendasTV:
 
             ## Search 6 pages and build a list of possibilities
             for vsearch in vsearch_array:
-                vsearch = urllib.parse.quote(vsearch)
+                
+                
+                # vsearch = urllib.parse.quote(vsearch)
                 for vsearch_prefix in ['/-/-', '/-/-/2', '/-/-/3', '/-/-/4', '/-/-/5', '/-/-/6']:
                     newPossibilities = 0
                     
@@ -292,32 +364,19 @@ class LegendasTV:
                     else:
                         local.output+="Searching for subtitles with: "+vsearch+" , "+vsearch_prefix+'\n'
                     
-                    request = urllib.request.Request(self.searh_url + vsearch + vsearch_prefix)
+                    url = self.searh_url + vsearch + vsearch_prefix
                     try:
-                        response = urllib.request.urlopen(request, timeout=ltv_timeout)
-                        page = response.read()
+                        r = self.session.get(url, timeout=ltv_timeout)
+                        r.raise_for_status()
+                    except (Exception) as e:
+                        if Debug > -1:
+                            local.output+='! Error Searching 3 times! '+str(type(e))+'\n'
+                            local.output+=url+'\n'
+                        with lock:
+                            statistics['Failed'] += 1
+                        return False
                         
-                    except:
-                        if Debug > 1:
-                            local.output+='Search timedout, retrying\n'
-                        try:
-                            response = urllib.request.urlopen(request, timeout=ltv_timeout)
-                            page = response.read()
-                        except:
-                            if Debug > 0:
-                                local.output+='Search timedout again, retrying\n'
-                            try:
-                                response = urllib.request.urlopen(request, timeout=ltv_timeout*2)
-                                page = response.read()
-                            except:
-                                if Debug > -1:
-                                    local.output+='! Error, searching timedout 3 times\n'
-                                    local.output+=self.searh_url + vsearch + vsearch_prefix+'\n'
-                                with lock:
-                                    statistics['Failed'] += 1
-                                return False
-                        
-                    soup = BeautifulSoup(page)
+                    soup = BeautifulSoup(r.text)
 
                     div_results = soup.find('div',{'class':'gallery clearfix list_element'})
                     if div_results:
@@ -528,6 +587,7 @@ class LegendasTV:
 
     ## Downloads a subtitle given it's ID
     def download(self, subtitle):
+        
         download_id = subtitle['id']
         if download_id:
             url_request = self.download_url+download_id
@@ -536,64 +596,48 @@ class LegendasTV:
             if Debug > 2:
                 local.output+='------- Downloading -------\n'
                 local.output+='Downloading '+subtitle['language']+', '+subtitle['release']+'\n'
-            request =  urllib.request.Request(url_request)
+            
             try:
-                response = urllib.request.urlopen(request, timeout=ltv_timeout*1.5)
-                legenda = response.read()
-            except:
+                r = self.session.get(url_request, timeout=ltv_timeout*4)
+                
+                # print("\nurl:\n"+str(r.url))
+                # print("\nrequested headers:\n"+str(r.request.headers))
+                # print("\nheaders:\n"+str(r.headers))
+                # print("\ncookies:\n"+str(r.cookies))
+                
+                r.raise_for_status()
+            except (Exception) as e:
                 if Debug > 1:
-                    local.output+="Download timedout, retrying\n"
-                try:
-                    response = urllib.request.urlopen(request, timeout=ltv_timeout*2)
-                    legenda = response.read()
-                except:
-                    if Debug > 0:
-                        local.output+="Download timedout again, retrying\n"
-                    try:
-                        sleep(5)
-                        response = urllib.request.urlopen(request, timeout=ltv_timeout*3)
-                        legenda = response.read()
-                    except:
-                        if Debug > 0:
-                            local.output+="Download timedout again, retrying\n"
-                        try:
-                            sleep(5)
-                            response = urllib.request.urlopen(request, timeout=ltv_timeout*3)
-                            legenda = response.read()
-                        except:
-                            if Debug > 0:
-                                local.output+="Download timedout again, retrying\n"
-                            try:
-                                sleep(5)
-                                response = urllib.request.urlopen(request, timeout=ltv_timeout*5)
-                                legenda = response.read()
-                            except:
-                                if Debug > -1:
-                                    local.output+="! Error, download timedout 5 times\n"
-                                with lock:
-                                    statistics['Failed'] += 1
-                                return False
-                    
+                    local.output+='! Error downloading! '+str(type(e))+'\n'
+                return False
+            
+            legenda = r.content
+            
             localName = ""
-            if 'Content-Disposition' in response.info() and "filename=" in response.info()['Content-Disposition']:
+            if 'Content-Disposition' in r.headers and "filename=" in r.headers['Content-Disposition']:
                 # If the response has Content-Disposition, we take file name from it
-                localName = response.info()['Content-Disposition'].split('filename=')[1]
+                localName = r.headers['Content-Disposition'].split('filename=')[1]
                 if localName[0] == '"' or localName[0] == "'":
                     localName = localName[1:-1]
-                
+            
             if len(localName)>4:
                 self.archivename= os.path.join(self.download_path, str(localName))
             else:
                 self.archivename = os.path.join(self.download_path, str(download_id))
-
-            if 'Content-Type' in response.info():
-                if 'rar' in response.info().get('Content-Type'):
-                    self.archivename += '.rar'
-                elif 'zip' in response.info().get('Content-Type'):
-                    self.archivename += '.zip'
-                else:
-                    if Debug > 2:
-                        local.output+='No download MIME TYPE. Not forcing extension\n'
+            
+            if r.url.endswith('.rar') or ('Content-Type' in r.headers and 'rar' in r.headers['Content-Type']):
+                self.archivename += '.rar'
+            elif r.url.endswith('.zip') or ('Content-Type' in r.headers and 'zip' in r.headers['Content-Type']):
+                self.archivename += '.zip'
+            elif r.url.endswith('.srt') or ('Content-Type' in r.headers and 'srt' in r.headers['Content-Type']):
+                if Debug > -1:
+                    local.output+='Downloaded an .SRT. Are you logged in?\n'
+                return False
+            else:
+                if Debug > 2:
+                    local.output+='No download MIME TYPE. Not forcing extension\n'
+            if Debug > 2:
+                local.output+=' Downloaded :'+self.archivename+'\n'
 
             f = open(self.archivename, 'wb')
             f.write(legenda)
@@ -710,8 +754,6 @@ class LegendasTV:
                 statistics['Failed'] += 1
             return False
 
-        #sorted(srts, key=itemgetter(0), reverse=True)
-        #srts.sort(reverse=True)
         extract = []
         
         #if Debug > 2:
@@ -784,7 +826,7 @@ class LegendasTV:
                     elif language == 'en':
                         statistics['EN'] += 1
             
-            except Exception:
+            except (Exception):
                 with lock:
                     statistics['Failed'] += 1
                 if Debug > -1:
@@ -829,19 +871,15 @@ def cleanAndRenameFile(Folder, filename):
             local.output+='Error cleaning original name\n'
         return filename
 
-    # Cleaning video file
-    try:
-        os.rename(fullFilename, fullNewname)
-    except Exception:
-        pass
 
-    if not os.path.isfile(fullNewname):
+    # Cleaning video file
+    if UpdateFile(fullFilename, fullNewname):
+        if Debug > -1:
+            local.output+='Renamed to: '+newname+'\n'
+    else:
         if Debug > 2:
             local.output+='! Error renaming. File in use? '+filename+'\n'
         return filename
-    else:
-        if Debug > -1:
-            local.output+='Renamed to: '+newname+'\n'
 
     
     # Cleaning subtitles and other files
@@ -854,17 +892,13 @@ def cleanAndRenameFile(Folder, filename):
         else:
             if Debug > 2:
                 local.output+='Found and removing '+regex+' in '+tmpFile+'\n'
-            try:
-                os.rename(tmpFile, tmpNew)
-            except Exception:
-                pass
-
-            if not os.path.isfile(tmpNew):
-                if Debug > -1:
-                    local.output+='! Error renaming subtitles: '+tmpFile+'\n'
-            else:
+            
+            if UpdateFile(tmpFile, tmpNew):
                 if Debug > -1:
                     local.output+='Renamed sub to: '+tmpNew+'\n'
+            else:
+                if Debug > -1:
+                    local.output+='! Error renaming subtitles: '+tmpFile+'\n'
         
     return newname
 
@@ -885,7 +919,7 @@ def createLinkSameName(Folder, Movie, Destination, HardLink=True):
     
     try:
         os.remove(fullLinkName)
-    except Exception:
+    except (Exception):
         #if Debug > 2:
         #    print 'Error: Couldn\'t remove %s' % (linkName)
         pass
@@ -898,7 +932,7 @@ def createLinkSameName(Folder, Movie, Destination, HardLink=True):
 
         if Debug > 2:
             local.output+='Linked: '+linkName+' --> '+Destination+'\n'
-    except Exception:
+    except (Exception):
         if Debug > 2:
             local.output+='! Error linking '+linkName+' --> '+Destination+'\n'
             local.output+='! print_exc():\n'
@@ -976,39 +1010,42 @@ def getAppendRating(fullpath, withYear=True, search=False, imdbID=0):
     if tmpregex.lastindex>2:
         rating = tmpregex.group(3).strip()
 
+    payload = {}           
+            
     if imdbID:
-        data = urllib.parse.urlencode({"i":imdbID})
+        payload['i'] = imdbID
+        # data = urllib.parse.urlencode({"i":imdbID})
         
     elif search:
+        payload['s'] = movie
         if withYear:
-            data = urllib.parse.urlencode({"s":movie,"y":year})
-        else:
-            data = urllib.parse.urlencode({"s":movie})
+            payload['y'] = year
     else:
+        payload['t'] = movie
         if withYear:
-            data = urllib.parse.urlencode({"t":movie,"y":year})
-        else:
-            data = urllib.parse.urlencode({"t":movie})
-    url = 'http://www.omdbapi.com/'
+            payload['y'] = year
+            
+    url = 'http://www.omdbapi.com'
     
-    url = url + "?" + data
 
     if Debug > 0:
-        print('Searching for: '+url)
+        print('Searching for: '+url + ", " + str(payload))
         
     try:
-        response = urllib.request.urlopen(url, timeout=ltv_timeout)
-    except:
+        
+        tmpsession = requests.Session()
+        tmpsession.headers.update({'User-Agent': 'LegendasTV-Downloader at GitHub'})
+        tmpsession.mount("http://", requests.adapters.HTTPAdapter(max_retries=3))
+        
+        r = tmpsession.get(url, params=payload, timeout=ltv_timeout*1.5)
+        
+        r.raise_for_status()
+    except (Exception) as e:
         if Debug > 0:
-            print('imdb timedout, retrying')
-        try:
-            response = urllib.request.urlopen(request, timeout=ltv_timeout)
-        except Exception:
-            if Debug > -1:
-                print('! Error, imdb timeout?')
-            return fullpath
+            print('! Error getting imdb rating: '+str(type(e))+'')
+        return fullpath
 
-    the_page = response.read().decode('utf-8')
+    the_page = r.text
     
     data = json.loads(the_page)
     if Debug > 0:
@@ -1065,7 +1102,7 @@ def getAppendRating(fullpath, withYear=True, search=False, imdbID=0):
 
         try:
             os.rename(fullFilename, newFullPath)
-        except Exception:
+        except (Exception):
             pass
 
 
@@ -1096,7 +1133,7 @@ def ltvdownloader(videosQ):
                     try:
                         print(local.output)
                         #print('remaining items: '+str(videosQ.qsize()))
-                    except Exception:
+                    except (Exception):
                         print(local.output.encode('utf-8','ignore'))
                         pass
                         
@@ -1141,7 +1178,7 @@ def ltvdownloader(videosQ):
             local.wanted_languages = preferred_languages[:]
             
             # Check with language
-            if append_language and not ForceSearch:
+            if append_language:
                 for idx, lang in reversed(list(enumerate(local.wanted_languages))):
                     tmp = os.path.splitext(os.path.join(dirpath, originalFilename))[0] + '.'+lang+'.s*'
                     for sublang in glob.glob(re.sub(r'(?<!\[)\]', '[]]', re.sub(r'\[', '[[]', tmp))):
@@ -1321,9 +1358,11 @@ def ltvdownloader(videosQ):
                 continue
                 
             if not ltv.download(subtitle):
-                if Debug > -1:
-                    local.output+='. Failed to download subtitle: '+subtitle['release']+'\n'
-                continue
+                time.sleep(random.uniform(1.0, 4.0))
+                if not ltv.download(subtitle):
+                    if Debug > -1:
+                        local.output+='. Failed to download subtitle: '+subtitle['release']+'\n'
+                    continue
             
             if Debug == 0:
                 local.output+='ed: '+subtitle['language']
@@ -1333,11 +1372,11 @@ def ltvdownloader(videosQ):
             continue
 
 
-        except queue.Empty:
+        except (queue.Empty):
             #print('Waiting for jobs for '+str(threading.current_thread().getName()))
             if Done:
                 return
-            time.sleep(random.uniform(1.0, 5.0))
+            time.sleep(random.uniform(1.0, 4.0))
             pass
         except:
             print('print_exc():')
@@ -1363,7 +1402,7 @@ if __name__ == '__main__':
     global statistics
     global ltv
 
-    garbage = [x.lower() for x in ['Unrated', 'DC', 'Dual', 'VTV', 'eng', 'subbed', 'artsubs', 'sample', 'ExtraTorrentRG', 'StyLish', 'Release' ]]
+    garbage = [x.lower() for x in ['Unrated', 'DC', 'Dual', 'VTV', 'eng', 'subbed', 'artsubs', 'sample', 'ExtraTorrentRG', 'StyLish', 'Release', 'US' ]]
     undesired = [x.lower() for x in ['.HI.', '.Impaired.', '.Comentários.', '.Comentarios.' ]]
     video_quality = [x.lower() for x in ['HDTV', 'XviD', 'DivX', 'x264', 'BluRay', 'BRip', 'BRRip', 'BDRip', 'DVDrip', 'DVD', 'AC3', 'DTS', 'TS', 'R5', 'R6', 'DVDScr', 'PROPER', 'REPACK' ]]
     video_size = [x.lower() for x in ['480', '720', '1080']]
@@ -1377,15 +1416,11 @@ if __name__ == '__main__':
     statistics={'Videos':0, 'NotVideos':0, 'Folders':0, 'Shows':0, 'Movies':0, 'Failed':0, 'Errors':0, 'Best':0, 'DL':0, 'Upg':0, 'NoBest':0, 'NoSubs':0, 'PT':0, 'BR':0, 'EN':0}
 
 
-    # If variables above are empty, ask from keyboard
-    # if len(ltv_username) == 0:
-    #     ltv_username = raw_input('Username: ')
-    # if len(ltv_password) == 0:
-    #     ltv_password = getpass.getpass('Password: ')
-
     ltv = LegendasTV(ltv_username, ltv_password)
 
-    # Logging in Legendas.TV
+    if Debug > -1:
+        print('Logging in Legendas.TV')
+    
     if not ltv.login():
         if Debug > -1:
             print('Press any key to exit...')
@@ -1396,9 +1431,11 @@ if __name__ == '__main__':
         print('Logged with success!')
 
     input_string = sys.argv[1:]
+
     if len(input_string) == 0:
         input_string.append(default_folder)
 
+    # Mark where the original input ends
     input_string.append("-OI")
 
     videosQ = queue.Queue()
@@ -1441,6 +1478,12 @@ if __name__ == '__main__':
             OnlyIMDBRating = True
             continue
 
+        if originalFilename == '-s':
+            silentMode = True
+            getch = None
+            continue
+
+
         if os.path.islink(originalFilename):
             if Debug > 0:
                 print('Symbolic link ignored! %s' % (os.path.basename(originalFilename)))
@@ -1457,11 +1500,11 @@ if __name__ == '__main__':
                     print('Not a video file: %s' % (os.path.basename(originalFilename)))
                 statistics['NotVideos'] += 1
                 continue
-            if len(input_string)==2:
+            if len(input_string)<=2:
                 ForceSearch=True
-                if Debug > 2:
+                if Debug > -1:
                     local.output+='Single argument: Forcing search, ignore existing subs\n'
-            
+        
         elif os.path.isdir(originalFilename):
 
             if not recursive_folders:
@@ -1518,9 +1561,10 @@ if __name__ == '__main__':
     if Debug > 2:
         print('------------------')
     
-    #ltv.logout()
+    
+    ltv.logout()
+    
     if Debug > -1:
-        #print 'Videos: %d, Shows: %d, Movies: %d, NotVideos: %d, Folders: %d' % (statistics['Videos'], statistics['Shows'], statistics['Movies'], statistics['NotVideos'], statistics['Folders'])
         
         print('\n\nFinal statistics:', end="")
         print('Failed!! %d, Errors: %d' % (statistics['Failed'], statistics['Errors'] ))
