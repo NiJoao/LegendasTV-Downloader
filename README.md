@@ -12,10 +12,10 @@ Please, use the **issues** tab to make suggestions and file bugs.
 
 ## Quick HowTo:
 
-1. Install python v3 and the modules: BeautifulSoup4, rarfile
-2. Make sure UNRAR is in your PATH variable and available on console 
+1. Install python v3.x
+2. Make sure UNRAR is in your PATH variable and available on console (e.g.: download from http://www.rarlab.com/rar_add.htm)
 3. Open the file 'ltv-downloader.py' with any text editor to edit the initial configuration:
-     Only your USERNAME and PASSWORD are required to be edited.
+     Only your USERNAME and PASSWORD are required to be edited, other changes are optional.
 4. Drag-and-Drop videos or folders on 'ltv-downloader.py' (or a shortcut of it, with extra arguments such as "-OnlyIMDBRating" to update Ratings without downloading subtitles)
 5. Enjoy!
 
@@ -48,20 +48,17 @@ ____
 * Copy it to your Series folder, or any other place you wish acessible to drag-and-drop your movies collection
 * You can create shortcuts to the script in any folders you wish
 * Edit the file to configure it. Read next session for more info
-* Install python v3 and the packages with the following methods
+* Install python v3.x
 
 ##### Linux Installation
 
     sudo apt-get install build-essential unrar-free python3 python3-pip python3-dev
-    pip install beautifulsoup4 rarfile
 
 ##### Windows Installation
 
 * Download and install "Python 3.4.x Windows Installer" from http://www.python.org/download/
 * Make sure the Python folder is in the PATH Environment Variable, e.g.: ** ;C:\Python34 **
-* Open a command line (Win+R, cmd) and type:
-  * pip install beautifulsoup4 rarfile
-* Download WinRar from http://www.rarlab.com/download.htm, extract the .exe file, and copy the unrar.exe to any folder on your PATH. E.g.: C:\Python34\
+* Download "UnRAR for Windows" from http://www.rarlab.com/rar_add.htm, extract the .exe file, and copy the unrar.exe to any folder on your PATH. E.g.: C:\Python34\
 
 ____
 
