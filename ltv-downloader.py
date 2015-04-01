@@ -47,7 +47,7 @@ Debug = 0
 
 ####### End of regular user configurations #######
 
-known_release_groups = ['LOL','2HD','ASAP','FQM','Yify','killers','fum','fever','p0w4','FoV','TLA','refill','notv','reward','bia','maxspeed'.'FiHTV','BATV','SickBeard']
+known_release_groups = ['LOL','2HD','ASAP','FQM','Yify','killers','fum','fever','p0w4','FoV','TLA','refill','notv','reward','bia','maxspeed','FiHTV','BATV','SickBeard']
 
 ## Set this flag using -f as parameter, to force search and replace all subtitles. 
 ## This option is implied when only one argument is passed (single file dragged & dropped)
