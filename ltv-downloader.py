@@ -15,7 +15,7 @@ preferred_languages = ['pt','br','en']
 rename_subtitle = True
 append_language = True
 append_confidence = False
-clean_old_language = False
+clean_old_language = True
 
 # Stop if #-Lang is already present: 1-PT, 2-PT/BR, 3-EN/PT/BR etc
 stopSearchWhenExistsLang = 1
