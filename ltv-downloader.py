@@ -113,7 +113,8 @@ try:
     import requests
     from bs4 import BeautifulSoup
     from rarfile import RarFile
-except:
+except (Exception) as e:
+    print('! Missing requirements. '+str(type(e)))
     import os, pip
     pip_args = [ ]
     # pip_args = [ '-vvv' ]
@@ -125,7 +126,7 @@ except:
     pip_args.append('install')
     for req in REQUIREMENTS:
         pip_args.append( req )
-    print('Installing requirements: ' + str(REQUIREMENTS))
+    print('Installing: ' + str(REQUIREMENTS))
     pip.main(pip_args)
     # pip.main(initial_args = pip_args)
  
@@ -135,9 +136,9 @@ except:
         from bs4 import BeautifulSoup
         from rarfile import RarFile
         print('Sucessfully installed the required libraries\n')
-    except:
+    except (Exception) as e:
         print('\nPython modules needed: beautifulsoup4, rarfile, requests')
-        print('We failled to install them automatically.')
+        print('We failled to install them automatically: '+str(type(e)))
         print('\nTry running this with Admin Priviliges, or')
         print('Run in a command prompt Admin Priviliges:\n')
         print('pip install requests beautifulsoup4 rarfile')
