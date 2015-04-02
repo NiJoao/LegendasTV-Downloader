@@ -139,6 +139,9 @@ except (Exception) as e:
     except (Exception) as e:
         print('\nPython modules needed: beautifulsoup4, rarfile, requests')
         print('We failled to install them automatically: '+str(type(e)))
+        print('! Traceback:')
+        traceback.print_exc(file=sys.stdout)
+        print()
         print('\nTry running this with Admin Priviliges, or')
         print('Run in a command prompt Admin Priviliges:\n')
         print('pip install requests beautifulsoup4 rarfile')
