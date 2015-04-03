@@ -239,6 +239,15 @@ def UpdateFile(file1, file2):
     print('\nSomething went wrong renaming files: '+str(type(exc))+'\n'+file1+'\nto:\n'+file2)
     return False
 
+def stringify(input):
+    if isinstance(input, dict):
+        return {stringify(key):stringify(value) for key,value in input.items()}
+    elif isinstance(input, list):
+        return [stringify(element) for element in input]
+    elif isinstance(input, str):
+        return input.encode('ascii', 'replace').decode('utf8')
+    else:
+        return input
 
 ## Takes car of everything related to the Website
 class LegendasTV:
@@ -1052,6 +1061,8 @@ def getAppendRating(fullpath, withYear=True, search=False, imdbID=0):
     the_page = r.text
     
     data = json.loads(the_page)
+    data = stringify(data)
+    
     if Debug > 0:
         print('Got imdb: '+str(data))
         
