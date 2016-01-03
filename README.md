@@ -97,19 +97,34 @@ If the subtitle file should be renamed to match the video's filename
 If used together with rename_subtitle, the subtitle will have the language-code appended (e.g. ShowName.pt.srt)
 * default: True
 
+##### download_each_lang 
+
+Download one subtitle file for each of the prefered languages
+Not yet implemented
+* default: False
+
 ##### clean_old_language 
 
 If used together with the previous settings, worse languages are deleted when a prefered is available
 * default: True
 
- = True
+##### append_confidence 
+
+Append a confidence/quality number to then end of the subtitle file. Allows "upgrading" with the same language
+Most players ignore this last number and correctly identify the srt file. If not, make this False
+* default: False
+
+##### stopSearchWhenExistsLang 
+
+Stop if #-Lang is already present: 1-PT, 2-PT/BR, 3-EN/PT/BR etc
+* default:  = 1
 
 ##### hardlink_without_lang_to_best_sub
 
 This option is useful for some players that can't read subtitle files with language-codes in the name. (e.g. Samsung televisions)
 If used together with append_language, a hardlink without language-code is created with the shows name (e.g. ShowName.srt), always pointing to the best downloaded subtitle language.
 In a file explorer, if behaves like any other file, looking like a simple copy of the coded-subtitle, but it occupies no disk-space and is instantaneous to create.
-* default: True
+* default: False
 
 ##### confidence_threshold 
 
@@ -125,27 +140,23 @@ If the '-r' argument is used, any folders FOLLOWING it will be recursed.
 This option is automatically activated if a single argument is passed. I.e.: ltv-downloader.py .\Recursed\
 * default: False
 
+##### append_iMDBRating 
+
+Append or update IMDB rating at the end of movie folders
+Folders must have the movie name followed by the year inside parenthesis, otherwise they are ignored
+eg: "Milk (2008)" becomes: "Milk (2008) [7.7]"
+* default: True
+
+##### fix_ETTV_subfolder 
+
+Rename, cleans and extracts videos and accompanying subtitles from ETTV-style subfolders
+* default: True
+
 ##### clean_original_filename & clean_name_from  
 
 With these options, the specified tags and any surrouding brackets/parentesis will be removed from the analyzed files.
 (e.g. ShowName.[VTV].avi is renamed to ShowName.avi
 * default: True, ['VTV', 'www.torentz.3xforum.ro']
-
-##### valid_subtitle_extensions & valid_video_extensions
-
-Valid file extensions to be parsed/extracted
-
-##### valid_extension_modifiers
-
-Valid extra file extensions, usually used when the file is still downloading.
-These extensions are ignored from the names, but the remaining/2nd extension is validated against the previous valid_video_extensions setting
-
-##### known_release_groups
-
-The release group is sometimes hard to find from the filename, mainly on Movies where there is no standard naming scheme.
-Having a list of known release groups can drastically improve the subtitles search results.
-This option specifies a list of some common groups, that are matched against the filename.
-If this fails to find the group, we use other methods to search for it.
 
 ##### Debug
 
