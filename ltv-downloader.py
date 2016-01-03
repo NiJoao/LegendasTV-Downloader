@@ -12,16 +12,24 @@ default_folder = '.'
 
 # Ordered, from: pt, br, en
 preferred_languages = ['pt','br','en']
+# Rename downloaded subtitles to the same name of the video file, and append language code
 rename_subtitle = True
 append_language = True
-append_confidence = False
+# Download one subtitle file for each of the prefered languages
+download_each_lang = False
+# Remove old subtitle languages when a prefered becomes available
 clean_old_language = True
+
+# Append a confidence/quality number to then end of the subtitle file. Allows "upgrading" with the same language
+# Most players ignore this last number and correctly identify the srt file. If not, make this False
+append_confidence = False
 
 # Stop if #-Lang is already present: 1-PT, 2-PT/BR, 3-EN/PT/BR etc
 stopSearchWhenExistsLang = 1
 
-# Keeps a subtitle with the same name of the video (hard)linking to the best available subtitle. Occupies no space
-hardlink_without_lang_to_best_sub = True
+# Keeps a subtitle with the same name of the video (hard)linking to the best available subtitle.
+# Occupies no space, but only useful for some old playeres that don't support language codes in subtitle files
+hardlink_without_lang_to_best_sub = False
 
 # Set this to 80 or 90 if you just want to download the best languague and subtitle
 confidence_threshold = 50 
@@ -35,19 +43,16 @@ recursive_folders = False
 append_iMDBRating = True
 
 # Rename and clean videos and accompanying files from this garbage-tags 
-clean_original_filename = True
-clean_name_from = ['VTV','www.torentz.3xforum.ro','MyTV','rarbg']
+fix_ETTV_subfolder = True
 
-# No need to change those, but feel free to add/remove some
-valid_subtitle_extensions = ['srt','txt','aas','ssa','sub','smi']
-valid_video_extensions = ['avi','mkv','mp4','wmv','mov','mpg','mpeg','3gp','flv']
-valid_extension_modifiers = ['!ut','part']
+# Rename and clean videos and accompanying files from this garbage-tags 
+clean_original_filename = True
+clean_name_from = ['VTV','www.torentz.3xforum.ro','MyTV','rarbg','eztv','ettv']
+
 
 Debug = 0
 
 ####### End of regular user configurations #######
-
-known_release_groups = ['LOL','2HD','ASAP','FQM','Yify','killers','fum','fever','p0w4','FoV','TLA','refill','notv','reward','bia','maxspeed','FiHTV','BATV','SickBeard']
 
 ## Set this flag using -f as parameter, to force search and replace all subtitles. 
 ## This option is implied when only one argument is passed (single file dragged & dropped)
@@ -58,6 +63,26 @@ OnlyIMDBRating = False
 ltv_timeout = 15
 thread_count = 5
 
+#### Known Arrays
+
+# No need to change those, but feel free to add/remove some
+valid_subtitle_extensions = ['srt','txt','aas','ssa','sub','smi']
+valid_video_extensions = ['avi','mkv','mp4','wmv','mov','mpg','mpeg','3gp','flv']
+valid_extension_modifiers = ['!ut','part','rar','zip']
+
+known_release_groups = ['LOL','killers','ASAP','dimension','ETRG','fum','ift','2HD','FoV','FQM','DONE','vision','fleet'
+,'Yify','MrLss','fever','p0w4','TLA','refill','notv','reward','bia','maxspeed','FiHTV','BATV','SickBeard','sfm']
+
+# garbage is ignored from filenames
+garbage = ['Unrated', 'DC', 'Dual', 'VTV', 'esubs', 'eng', 'subbed', 'artsubs', 'sample', 'ExtraTorrentRG', 'StyLish', 'Release', 'Internal', '2CH' ]
+
+# undesired wordslowers the confidence weight if detected
+undesired = ['.HI.', '.Impaired.', '.Comentários.', '.Comentarios.' ]
+
+# video_quality, video_size and release_groups should agree between movie file and subtitles, otherwise weight is reduced
+video_quality = ['HDTV', 'PDTV', 'XviD', 'DivX', 'x264', 'aac', 'dd51', 'webdl', 'webrip', 'BluRay', 'blueray', 'BRip', 'BRRip', 'BDRip', 'DVDrip', 'DVD', 'AC3', 'DTS', 'TS', 'R5', 'R6', 'DVDScr', 'PROPER', 'REPACK' ]
+video_size = ['480', '540', '720', '1080']                              
+    
 
 ####### Dragons ahead !! #######
 
@@ -66,7 +91,7 @@ Done = False
 
 import os, sys, traceback
 import json, re
-import glob, filecmp, tempfile
+import shutil, stat, glob, filecmp, tempfile
 import signal, platform
 import threading, queue, time, random
 
@@ -185,50 +210,52 @@ def SameFile(file1, file2):
         return False
 os.path.samefile = SameFile
 
-def UpdateFile(file1, file2):
+def UpdateFile(src, dst):
+    if src == dst:
+        return True
     exc = ""
     for x in [1, 2, 3]: 
         try:
-            if not os.path.isfile(file1):
+            if not os.path.isfile(src):
                 return False
             
-            if not os.path.isfile(file2):
-                os.rename(file1, file2)
+            if not os.path.isfile(dst):
+                os.rename(src, dst)
                 return True
             
-            if SameFile(file1, file2):
-                os.remove(file1)
+            if os.path.samefile(src, dst):
+                os.remove(src)
                 return True
             
-            if os.path.getsize(file1) < 1500 and os.path.getsize(file2) > 1500:
-                os.remove(file1)
+            if os.path.getsize(src) < 1500 and os.path.getsize(dst) >= 1500:
+                os.remove(src)
                 return True
                 
-            if os.path.getsize(file2) < 1500 and os.path.getsize(file1) > 1500:
-                os.remove(file2)
-                os.rename(file1, file2)
+            if os.path.getsize(dst) < 1500 and os.path.getsize(src) >= 1500:
+                os.remove(dst)
+                os.rename(src, dst)
                 return True
                 
-            if os.path.getmtime(file1) < os.path.getmtime(file2):
-                os.remove(file1)
+            if os.path.getmtime(src) < os.path.getmtime(dst):
+                os.remove(src)
                 return True
                 
-            if os.path.getmtime(file2) < os.path.getmtime(file1):
-                os.remove(file2)
-                os.rename(file1, file2)
+            if os.path.getmtime(dst) < os.path.getmtime(src):
+                os.remove(dst)
+                os.rename(src, dst)
                 return True
             
-            if os.path.getsize(file1) < os.path.getsize(file2):
-                os.remove(file1)
+            if os.path.getsize(src) < os.path.getsize(dst):
+                os.remove(src)
                 return True
                 
-            if os.path.getsize(file2) < os.path.getsize(file1):
-                os.remove(file2)
-                os.rename(file1, file2)
+            if os.path.getsize(dst) < os.path.getsize(src):
+                os.remove(dst)
+                os.rename(src, dst)
                 return True
             
-            os.remove(file2)
-            os.rename(file1, file2)
+            os.remove(dst)
+            os.rename(src, dst)
             return True
             
         except (Exception) as e:
@@ -236,7 +263,7 @@ def UpdateFile(file1, file2):
             time.sleep(0.5)
             pass
     
-    print('\nSomething went wrong renaming files: '+str(type(exc))+'\n'+file1+'\nto:\n'+file2)
+    print('\nSomething went wrong renaming files: '+str(type(exc))+'\n'+src+'\nto:\n'+dst)
     return False
 
 def stringify(input):
@@ -248,6 +275,7 @@ def stringify(input):
         return input.encode('ascii', 'replace').decode('utf8')
     else:
         return input
+
 
 ## Takes car of everything related to the Website
 class LegendasTV:
@@ -303,20 +331,21 @@ class LegendasTV:
         return True
 
     ## Search and select best subtitle
-    def search(self, videoTitle, videoSubTitle, year, season, episode, group, size, quality):
+    def search(self, originalShow):
         
         if Debug > 2:
             local.output+='------- Searching -------\n'
         if Debug > 2:
-            local.output+='Title: '+', '.join(videoTitle)+'\n\
-        SubTitle: '+', '.join(videoSubTitle)+'\n\
-        year: '+str(year)+'\n\
-        season: '+str(season)+'\n\
-        episode: '+str(episode)+'\n\
-        wanted_languages: '+', '.join(local.wanted_languages)+'\n\
-        group: '+group+'\n\
-        size: '+size+'\n\
-        quality: '+', '.join(quality)+'\n'
+            local.output+='ShowName='+str(originalShow['ShowName'])+'\n'
+            local.output+='Year='+str(originalShow['Year'])+'\n'
+            local.output+='Season='+str(originalShow['Season'])+'\n'
+            local.output+='Episode='+str(originalShow['Episode'])+'\n'
+            local.output+='Group='+str(originalShow['Group'])+'\n'
+            local.output+='Quality='+str(originalShow['Quality'])+'\n'
+            local.output+='Size='+str(originalShow['Size'])+'\n'
+            local.output+='Undesired='+str(originalShow['Undesired'])+'\n'
+            local.output+='Unknown='+str(originalShow['Unknown'])+'\n'
+            local.output+='\n'
         
         list_possibilities = []
 
@@ -325,48 +354,39 @@ class LegendasTV:
                 break
             vsearch_array = []
 
-            if season and episode:
+            if originalShow['Season'] and originalShow['Episode']:
                 if iTry == 1:
-                    vsearch_array.append(' '.join(videoTitle)+' '+season+'E'+episode)
-
+                    if len(originalShow['Episode'])>1:
+                        vsearch_array.append(' '.join(originalShow['ShowName'])+' '+"S{:02d}E".format(originalShow['Season'][0]) + "E".join('{:02d}'.format(a) for a in originalShow['Episode']))
+                    vsearch_array.append(' '.join(originalShow['ShowName'])+' '+"S{:02d}E{:02d}".format(originalShow['Season'][0], originalShow['Episode'][0]))
+                
                 if iTry == 2:
-                    vsearch_array.append(' '.join(videoTitle)+' '+season+'x'+episode)
+                    if len(originalShow['Episode'])>1:
+                        vsearch_array.append(' '.join(originalShow['ShowName'])+' '+"{:0d}x".format(originalShow['Season'][0]) + "x".join('{:02d}'.format(a) for a in originalShow['Episode']))
+                    vsearch_array.append(' '.join(originalShow['ShowName'])+' '+"{:0d}x{:02d}".format(originalShow['Season'][0], originalShow['Episode'][0]))
 
                 if iTry == 3:
-                    vsearch_array.append(' '.join(videoTitle)+' '+season+episode)
-                    ## vsearch_array.append(' '.join(videoTitle)+' '+season+' '+episode)
+                    vsearch_array.append(' '.join(originalShow['ShowName'])+' '+"{:0d}{:02d}".format(originalShow['Season'][0], originalShow['Episode'][0]))
+                    ##vsearch_array.append(' '.join(originalShow['ShowName'])+' '+"{:0d} {:02d}".format(originalShow['Season'][0], originalShow['Episode'][0]))
                 
             else:
                 if iTry == 1:
-                    
-                    if videoSubTitle and group and year:
-                        vsearch_array.append(' '.join(videoTitle+videoSubTitle+[str(group)]+[str(year)]))
-                    
-                    if videoSubTitle and year:
-                        vsearch_array.append(' '.join(videoTitle+videoSubTitle+[str(year)]))
-                    
-                    if videoSubTitle:
-                        vsearch_array.append(' '.join(videoTitle+videoSubTitle))
-                    
-                    if year:
-                        vsearch_array.append(' '.join(videoTitle+[str(year)]))
+                    if originalShow['Group'] and originalShow['Year']:
+                        vsearch_array.append(' '.join(originalShow['ShowName'])+' '+originalShow['Group'][0]+' '+originalShow['Year'][0])
                     
                 if iTry == 2:
-                    if videoSubTitle and group:
-                        vsearch_array.append(' '.join(videoTitle+videoSubTitle+[str(group)]))
-                    
-                    if group and year:
-                        vsearch_array.append(' '.join(videoTitle+[str(group)]+[str(year)]))
+                    if originalShow['Year']:
+                        vsearch_array.append(' '.join(originalShow['ShowName'])+' '+originalShow['Year'][0])
+                        
+                    if originalShow['Group']:
+                        vsearch_array.append(' '.join(originalShow['ShowName'])+' '+originalShow['Group'][0])
                     
                 if iTry == 3:
-                    if group:
-                        vsearch_array.append(' '.join(videoTitle+[str(group)]))
-                    
-                    vsearch_array.append(' '.join(videoTitle))
+                    vsearch_array.append(' '.join(originalShow['ShowName']))
+
 
             ## Search 6 pages and build a list of possibilities
             for vsearch in vsearch_array:
-                
                 
                 # vsearch = urllib.parse.quote(vsearch)
                 for vsearch_prefix in ['/-/-', '/-/-/2', '/-/-/3', '/-/-/4', '/-/-/5', '/-/-/6']:
@@ -375,7 +395,7 @@ class LegendasTV:
                     if Debug < 2:
                         local.output+='. '
                     else:
-                        local.output+="Searching for subtitles with: "+vsearch+" , "+vsearch_prefix+'\n'
+                        local.output+="\nSearching for subtitles with: "+vsearch+" , "+vsearch_prefix+'\n'
                     
                     url = self.searh_url + vsearch + vsearch_prefix
                     try:
@@ -411,11 +431,11 @@ class LegendasTV:
 
                             try:
                                 td = span.find('a').get('href')
-                                sub = span.find('a').contents[0]
+                                subName = span.find('a').contents[0]
 
                                 flag = span.find('img').get('src')
                             except:
-                                if Debug > 2:
+                                if Debug > 1:
                                     local.output+="! Error parsing result list: "+span.prettify()+'\n'
                                 continue
 
@@ -423,62 +443,66 @@ class LegendasTV:
                                 if Debug > 2:
                                     local.output+='#### Something went wrong ####\n'
                                 continue
-
-                            possibility = {}
-                            possibility.clear()
                             
-                            newPossibilities += 1
-
                             # Parse the link
-                            tmpregex = re.search('/download/(\w+)/(\w+)/(\w+)',td)
+                            tmpregex = re.search('/download/([^/\\\]+)/([^/\\\]+)/([^/\\\]+)',td)
 
                             if not tmpregex or tmpregex.lastindex<3:
                                 local.output+='#### Error parsing link:'+td+' ####\n'
                                 continue
-
+                                
                             # Get the download ID
                             download_id = tmpregex.group(1)
                             release = tmpregex.group(3)
 
-                            if download_id in [x['id'] for x in list_possibilities]:
-                                continue
-
-                            possibility['id'] = download_id
-                            if not download_id:
+                            if not download_id or not release:
                                 if Debug > 2:
-                                    local.output+='Couldn\'t get download_id\n'
+                                    local.output+='Couldn\'t get download_id and Release\n'
                                 continue
                             
-                            possibility['release'] = release.lower()
-                            if not possibility['release']:
-                                if Debug > 2:
-                                    local.output+='Couldn\'t get Release\n'
+                            if download_id in [x['id'] for x in list_possibilities]:
+                                ## Already listed this
                                 continue
                             
                             ## Get the language
-                            tmpregex = re.search('/\w*/(?:icon|flag)_(\w+)\.(gif|jpg|jpeg|png)',flag)
+                            tmpregex = re.search('/[a-zA-Z0-9]*/(?:icon|flag)_([a-zA-Z0-9]+)\.(gif|jpg|jpeg|png)',flag)
                             
                             if not tmpregex or tmpregex.lastindex<2:
                                 local.output+='#### Error parsing flag: '+flag+' ####\n'
                                 continue
                             language = tmpregex.group(1)
+                            
+                            
+                            possibility = {}
+                            possibility.clear()
+                            
+                            newPossibilities += 1
+                            
+                            possibility['%'] = 100
 
+                            possibility['id'] = download_id
+                            
+                            possibility['release'] = release.lower()
+                            
+                            possibility['sub_name'] = subName.lower()
+                            
                             if 'pt' in language:
                                 possibility['language'] = 'pt'
                             elif 'braz' in language:
                                 possibility['language'] = 'br'
                             elif 'usa' in language:
                                 possibility['language'] = 'en'
-
-
-                            if not 'language' in possibility or not possibility['language']:
+                            else:
                                 if Debug > 2:
                                     local.output+='Couldn\'t get Language\n'
                                 continue
                             
-                            ## Now it doesn't have a SubName
-                            possibility['sub_name'] = sub.lower()
-                            
+                            # Filter wanted_languages
+                            if possibility['language'] not in preferred_languages:
+                                if Debug > 2:
+                                    local.output+='0!!, Wrong language: '+possibility['language']+', from: '+str(preferred_languages)+'\n'
+                                continue
+                                
                             #downloads = td.contents[5]
                             #possibility['downloads'] = downloads.lower()
                             
@@ -494,92 +518,47 @@ class LegendasTV:
                             #date = span.findAll('td')[2].contents[0]
                             #possibility['date'] = date.lower()
                             
-                            possibility['%'] = 100
+                            if Debug > 2:
+                                local.output+='\nFOUND!: '+possibility['language']+' - '+possibility['release']+'\n'
+                            
+                            
+                            releaseShow = parseFileName(possibility['release'])
+                            
+                            subnameShow = parseFileName(possibility['sub_name'])
+                            
+                            releaseShow['ShowName'] = list(set(releaseShow['ShowName'] + subnameShow['ShowName']))
+                            releaseShow['Year'] = list(set(releaseShow['Year'] + subnameShow['Year']))
+                            releaseShow['Season'] = list(set(releaseShow['Season'] + subnameShow['Season']))
+                            releaseShow['Episode'] = list(set(releaseShow['Episode'] + subnameShow['Episode']))
+                            releaseShow['Group'] = list(set(releaseShow['Group'] + subnameShow['Group']))
+                            releaseShow['Quality'] = list(set(releaseShow['Quality'] + subnameShow['Quality']))
+                            releaseShow['Size'] = list(set(releaseShow['Size'] + subnameShow['Size']))
+                            releaseShow['Undesired'] = list(set(releaseShow['Undesired'] + subnameShow['Undesired']))
+                            releaseShow['Unknown'] = list(set(releaseShow['Unknown'] + subnameShow['Unknown']))
+                            
+                            possibility['%'] = calculateSimilarity(originalShow, releaseShow)
+                            
+                            if not download_each_lang:
+                                langindex = preferred_languages.index(possibility['language'])
+                                if Debug > 2:
+                                    local.output+='-'+str(langindex*21)+', Language '+possibility['language']+' at pos '+str(langindex)+'\n'
+                                possibility['%'] -= 21*langindex
                             
                             list_possibilities.append(possibility)
-                            if Debug > 2:
-                                local.output+='FOUND!: '+possibility['language']+' - '+possibility['release']+'\n'
-
 
                     if Debug > 2:
                         local.output+='Got results: '+str(newPossibilities)+'\n'
 
+                    ## If this result page was not full, don't read the next one
                     if newPossibilities < 20:
                         break
 
-        if len(list_possibilities) == 0:
+        if not list_possibilities:
             if Debug > 2:
                 local.output+='No subtitles found\n'
             with lock:
                 statistics['NoSubs'] += 1
             return False
-            
-        # Calculate similarity for every possibility
-        for possibility in list_possibilities:
-            if Debug > 2:
-                local.output+='--------\n'
-            if Debug > 2:
-                local.output+='Analyzing '+possibility['release']+'\n'
-
-            # Filter wanted_languages
-            possibility['language'] = possibility['language'].replace('us', 'en')
-            if possibility['language'] not in preferred_languages:
-                if Debug > 2:
-                    local.output+='0!!, Wrong language: '+possibility['language']+', from: '+str(preferred_languages)+'\n'
-                possibility['%'] = 0
-                continue
-            
-            for index, tmp in enumerate(preferred_languages):
-                if tmp == possibility['language']:
-                    if Debug > 2:
-                        local.output+='-'+str(index*21)+', Language '+possibility['language']+' at pos '+str(index)+'\n'
-                    possibility['%'] -= 21*index
-                    break
-            
-            # Evaluate name
-            for tmp in [j for j in videoTitle]:
-                if tmp.lower() not in possibility['sub_name'] and tmp.lower() not in possibility['release']:
-                    if Debug > 2:
-                        local.output+='-15, Missing word: '+tmp+' in name: '+possibility['sub_name']+'\n'
-                    possibility['%'] -= 15*index
-        
-            # Evaluate season number in name
-            if season:
-                if season not in possibility['sub_name'] and season not in possibility['release']:
-                    if Debug > 2:
-                        local.output+='-15, Missing Season: '+season+' in name: '+possibility['sub_name']+'\n'
-                    possibility['%'] -= 15*index
-
-            # Filter group
-            if group not in possibility['release']:
-                if Debug > 2:
-                    local.output+='-20, Correct group not found: '+group+'\n'
-                possibility['%'] -= 20
-            
-            # Filter size
-            if size:
-                if size not in possibility['release']:
-                    if Debug > 2:
-                        local.output+='-14, Correct size not found: '+size+'\n'
-                    possibility['%'] -= 14
-            
-            # Evaluate quality
-            for tmp in quality:
-                denormalizedQuality = deNormalizeQuality(tmp)
-                for tmp2 in denormalizedQuality:
-                    if tmp2 in possibility['release']:
-                        break
-                    if tmp2 == denormalizedQuality[-1]:
-                        if Debug > 2:
-                            local.output+='-5, Correct quality not found: '+tmp2+'\n'
-                        possibility['%'] -= 5
-
-            # Devalue undesired words
-            for tmp in undesired:
-                if tmp in possibility['release']:
-                    if Debug > 2:
-                        local.output+='-2, Undesired found: '+tmp+'\n'
-                    possibility['%'] -= 2
 
         if Debug > 2:
             local.output+='------------------\n'
@@ -587,7 +566,7 @@ class LegendasTV:
         
         for idx, possibility in enumerate(final_list):
             if Debug > 1:
-                local.output+='Chance '+str(idx)+', '+str(possibility['%'])+'%, '+possibility['language']+', '+possibility['release']+'\n'
+                local.output+='Chance '+str(idx)+', '+str(possibility['%'])+'%, '+possibility['language']+', '+possibility['release'] + ' | ' + possibility['sub_name'] +'\n'
         
         if final_list[0]['language'] not in local.wanted_languages:
             if Debug > 2:
@@ -607,7 +586,7 @@ class LegendasTV:
             if Debug == 0:
                 local.output+='Download'
             if Debug > 2:
-                local.output+='------- Downloading -------\n'
+                local.output+='\n------- Downloading -------\n'
                 local.output+='Downloading '+subtitle['language']+', '+subtitle['release']+'\n'
             
             try:
@@ -661,10 +640,11 @@ class LegendasTV:
             return True
 
     ## Choose the likeliest and extracts it
-    def extract_sub(self, dirpath, originalFilename, group, size, quality, language):
+    def extract_sub(self, dirpath, originalFilename, originalShow, language):
         global lock
+                
         if Debug > 2:
-            local.output+='------- Extracting -------\n'
+            local.output+='\n------- Extracting -------\n'
         if Debug > 3:
             local.output+='File: '+self.archivename+'\n'
         if Debug > 2:
@@ -684,14 +664,14 @@ class LegendasTV:
                     local.output+='UNRAR must be available on console\n'
                 return False
 
-        language_compensation = -1
-        for index, tmp in enumerate(local.wanted_languages):
-            if tmp == language:
-                language_compensation = 15*index
-                break
-        if language_compensation == -1:
-            local.output+='No language? '+language+'\n'
-            language_compensation = 0
+        language_compensation = 0
+        if not download_each_lang:
+            langindex = -1
+            langindex = local.wanted_languages.index(language)
+            if langindex>=0:
+                language_compensation = 21*langindex
+            else:
+                local.output+='No language? '+language+'\n'
 
         files = archive.infolist()
             
@@ -699,60 +679,28 @@ class LegendasTV:
         current_maxpoints = 0
         current_maxfile = []
 
-        unique_compensation = 0
-        if len(files) == 1:
-            unique_compensation = 15
-
         for srtname in files:
-            points = 100 - language_compensation + unique_compensation
-
+            
             testname = srtname.filename.lower()
+            testname = os.path.basename(str(testname))
+            
             if not testname.endswith(tuple(valid_subtitle_extensions)+('rar', 'zip')):
                 if Debug > 2:
                     local.output+='Non Sub file: ' + str(srtname)+'\n'
                 continue
-
+            
             if Debug > 2:
-                local.output+='Analyzing: '+str(testname)+'\n'
-
-            # if language not in testname:
-            #     if Debug > 2:
-            #         local.output+='-1, Language not in FileName: '+language+'\n'
-            #     points-=1
-                
-            if group not in testname:
-                if Debug > 2:
-                    local.output+='-30, Correct Release not found: '+group+'\n'
-                points-=30
-                
-            for tmp in quality:
-                denormalizedQuality = deNormalizeQuality(tmp)
-                for tmp2 in denormalizedQuality:
-                    if tmp2 in testname:
-                        break
-                    if tmp2 == denormalizedQuality[-1]:
-                        if Debug > 2:
-                            local.output+='-5, Correct quality not found: '+tmp2+'\n'
-                        points-=5
-
-            for tmp in undesired:
-                if tmp in testname:
-                    if Debug > 2:
-                        local.output+='-5, Undesired word found: '+tmp+'\n'
-                    points-=5
-            if size:
-                if size not in testname:
-                    if Debug > 2:
-                        local.output+='-15, Correct size not found: '+size+'\n'
-                    points-=15
-            else:
-                if re.search("("+'|'.join(video_size)+")(i|p)?", testname, re.I):
-                    if Debug > 2:
-                        local.output+='-20, Too much size found: ' + srtname.filename+'\n'
-                    points-=20
+                local.output+='\n--- Analyzing: '+str(testname)+'\n'
+            
+            compressedShow = parseFileName(testname)
+            
+            points = calculateSimilarity(originalShow, compressedShow)
+            
+            points = points - language_compensation
+            
             if Debug > 2:
-                local.output+='Adding subtitle file with points '+str(points)+': '+srtname.filename+'\n'
-
+                local.output+='Adding subtitle file with '+str(points)+'% : '+str(testname)+'\n'
+            
             if current_maxpoints<points:
                 current_maxpoints = points
                 current_maxfile = srtname
@@ -760,7 +708,7 @@ class LegendasTV:
         if Debug > 2:
             local.output+='-------\n'
 
-        if points<1 or not current_maxfile:
+        if not current_maxfile or current_maxpoints<1:
             if Debug > -1:
                 local.output+='! Error: No valid subs found on archive\n'
             with lock:
@@ -769,11 +717,6 @@ class LegendasTV:
 
         extract = []
         
-        #if Debug > 2:
-        #    local.output+='Ext '+str(idx)+', '+str(p)+'%: '+os.path.basename(n.filename)+'\n'
-
-        #if srts[0][0] > confidence_threshold:
-        #    extract.append(srts[0][1])
         extract.append(current_maxfile)
 
         # maximum=confidence_threshold
@@ -788,7 +731,7 @@ class LegendasTV:
             fileinfo.filename = os.path.basename(fileinfo.filename)
             
             if Debug > 2:
-                local.output+='Extracting file: '+fileinfo.filename+'\n'
+                local.output+='Extracted '+fileinfo.filename+' with ' +str(current_maxpoints+language_compensation)+'%\n'
 
             if fileinfo.filename.endswith(('rar', 'zip')):
                 if Debug > 2:
@@ -798,7 +741,7 @@ class LegendasTV:
                 if not ltv.extract_sub(dirpath, originalFilename, group, size, quality, language):
                     return False
                 continue
-                
+            
             dest_filename = fileinfo.filename
 
             if len(extract) == 1 and rename_subtitle:
@@ -809,7 +752,6 @@ class LegendasTV:
                 
             if append_confidence:
                 dest_filename = os.path.splitext(dest_filename)[0]+'.'+str(current_maxpoints+language_compensation)+os.path.splitext(dest_filename)[1]
-            
             
             if Debug > 2:
                 local.output+='Extracting subtitle as: '+dest_filename+'\n'
@@ -863,27 +805,89 @@ class LegendasTV:
 
         return True
         
+def moveMedia(src, dst):
+    dstFolder = os.path.dirname(dst)
+    
+    scrFileName = os.path.splitext(os.path.basename(src))[0]
+    dstFileName = os.path.splitext(os.path.basename(dst))[0]
+    
+    # Moving main video file
+    if UpdateFile(src, dst):
+        if Debug > 1:
+            local.output+='Moved ' + os.path.basename(src) + ' to: '+os.path.basename(dstFolder)+'\n'
+    else:
+        if Debug > 1:
+            local.output+='! Error renaming. File in use? '+filename+'\n'
+        return False
+    
+    
+    # Moving related subtitles
+    sub_pattern = re.sub(r'(?<!\[)\]', '[]]', re.sub(r'\[', '[[]', os.path.splitext(src)[0]+'.*'))
+    for tmpFile in glob.glob(sub_pattern):
+        if not os.path.splitext(tmpFile)[1][1:] in valid_subtitle_extensions:
+            if Debug > 2:
+                local.output+='Not a valid extension: '+os.path.splitext(tmpFile)[1][1:]+'\n'
+            continue
+        if Debug > 1:
+            local.output+='File found to move: '+tmpFile+'\n'
+        newFile = os.path.basename(tmpFile).replace(scrFileName, dstFileName)
+        newFullPath = os.path.join(dstFolder, newFile)
+        if Debug > 1:
+            local.output+='Renaming to: '+newFile+'\n'
+        
+        if not UpdateFile(tmpFile, newFullPath):
+            if Debug > -1:
+                local.output+='! Error recovering subtitle from ETTV folder! '+tmpFile+'\n'
+        else:
+            if Debug > -1:
+                local.output+='Recovered 1 subtitle from ETTV folder: '+newFile+'\n'
+        
+    return True
+    
+def checkAndDeleteFolder(src):
+    # Search for subtitles or media files
+    
+    for files in os.listdir(src):
+        if Debug > 2:
+            local.output+='File found: '+files+' with ext: '+os.path.splitext(files)[1][1:]+'\n'
+        if os.path.splitext(files)[1][1:] in [x for x in valid_subtitle_extensions if x != 'txt']:
+            return False
+        if os.path.splitext(files)[1][1:] in valid_video_extensions:
+            return False
+        if os.path.splitext(files)[1][1:] in valid_extension_modifiers:
+            return False
+        # os.remove(os.path.join(src,files))
+    
+    if Debug > 1:
+        local.output+='Parent folder is empty. Removed!\n'
+        
+    def del_rw(action, name, exc):
+        os.chmod(name, stat.S_IWRITE)
+        os.remove(name)
+    shutil.rmtree(src, onerror=del_rw)
+    # os.rmdir(src)
+    return True
+    
 # Remove garbage from filenames
 def cleanAndRenameFile(Folder, filename):
 
     # Generate Regex
     regex = '(' + '|'.join(clean_name_from)+')'
 
-    if not re.search('\W'+regex+'\W', filename, re.I):
+    if not re.search('[^a-zA-Z0-9]'+regex+'[^a-zA-Z0-9]', filename, re.I):
         return filename
-
-    fullFilename = os.path.join(Folder, filename)
-    statementClean = re.compile('\W?[\[\(\{]?'+regex+'[\]\)\}]?', re.I)
+    
+    statementClean = re.compile('[^a-zA-Z0-9]?[\[\(\{]?'+regex+'[\]\)\}]?', re.I)
     newname = statementClean.sub('', filename)
 
+    fullFilename = os.path.join(Folder, filename)
     fullNewname = os.path.join(Folder, newname)
 
     # Sanity check
-    if newname == filename:
+    if fullFilename == fullNewname:
         if Debug > 2:
             local.output+='Error cleaning original name\n'
         return filename
-
 
     # Cleaning video file
     if UpdateFile(fullFilename, fullNewname):
@@ -893,19 +897,12 @@ def cleanAndRenameFile(Folder, filename):
         if Debug > 2:
             local.output+='! Error renaming. File in use? '+filename+'\n'
         return filename
-
     
-    # Cleaning subtitles and other files
-    glob_pattern = re.sub(r'(?<!\[)\]', '[]]', re.sub(r'\[', '[[]', os.path.splitext(fullFilename)[0]+'.*'))
-    for tmpFile in glob.glob(glob_pattern):
+    # Cleaning related subtitles and other files with different extensions
+    sub_pattern = re.sub(r'(?<!\[)\]', '[]]', re.sub(r'\[', '[[]', os.path.splitext(fullFilename)[0]+'.*'))
+    for tmpFile in glob.glob(sub_pattern):
         tmpNew = statementClean.sub('', tmpFile)
-        if tmpNew == tmpFile:
-            if Debug > 2:
-                local.output+='Error cleaning this name: '+tmpFile+'\n'
-        else:
-            if Debug > 2:
-                local.output+='Found and removing '+regex+' in '+tmpFile+'\n'
-            
+        if tmpNew != tmpFile:
             if UpdateFile(tmpFile, tmpNew):
                 if Debug > -1:
                     local.output+='Renamed sub to: '+tmpNew+'\n'
@@ -914,6 +911,80 @@ def cleanAndRenameFile(Folder, filename):
                     local.output+='! Error renaming subtitles: '+tmpFile+'\n'
         
     return newname
+
+
+# Fix ETTV folders
+def cleanAndMoveFromSubfolder(origFolder, origFilename):
+    shouldMove = False
+    
+    regex = '(' + '|'.join(clean_name_from)+')'
+    statementClean = re.compile('[^a-zA-Z0-9]?[\[\(\{]?'+regex+'[\]\)\}]?', re.I)
+
+    origAbsoluteFile = os.path.join(origFolder, origFilename)
+    
+    parentFolder = os.path.basename(origFolder)
+    grandParentFolder = os.path.dirname(origFolder)
+    
+    if not os.path.lexists(grandParentFolder):
+        return (origFolder, origFilename)
+    
+    cleanParentFolder = statementClean.sub('', parentFolder)
+    cleanFilename = statementClean.sub('', origFilename)
+    fileExt = os.path.splitext(cleanFilename)[1]
+    
+    
+    if cleanParentFolder == os.path.splitext(cleanFilename)[0]:
+        if moveMedia(origAbsoluteFile, os.path.join(grandParentFolder, cleanFilename)):
+            deleted = checkAndDeleteFolder(origFolder)
+            if Debug > -1:
+                if deleted:
+                    local.output+='ETTV subfolder fixed: '+cleanFilename+'\n'
+                else:
+                    local.output+='ETTV subfolder fixed, but not yet empty!: '+cleanFilename+'\n'
+            return (grandParentFolder, cleanFilename)
+        else:
+            if Debug > -1:
+                local.output+='ETTV subfolder detected, but failed to fix\n'
+            return (origFolder, origFilename)
+    
+    
+    if re.match(".+[^a-zA-Z0-9]S\d\dE\d\d(E\d\d)?[^a-zA-Z0-9].+", cleanParentFolder):
+        if Debug > 1:
+            local.output+='Father has a TV Show name...'
+        try:
+            name=re.sub("(.+[^a-zA-Z0-9])S\d\dE\d\d(E\d\d)?[^a-zA-Z0-9].+", '\\1', cleanParentFolder)
+            season=int(re.sub(".+[^a-zA-Z0-9]S(\d\d)E\d\d(E\d\d)?[^a-zA-Z0-9].+", '\\1', cleanParentFolder))
+            episode=int(re.sub(".+[^a-zA-Z0-9]S\d\dE(\d\d)(E\d\d)?[^a-zA-Z0-9].+", '\\1', cleanParentFolder))
+        except (Exception) as e:
+            if Debug > -1:
+                local.output+='Very strange error happened, parsing ETTV folder. Report to programmer please!\n'
+            return (origFolder, origFilename)
+            
+        if cleanFilename.startswith((name.lower()+"{:0d}{:02d}").format(int(season), int(episode))):
+            destFileName = cleanParentFolder+fileExt
+            if Debug > 1:
+                local.output+='Son has the same!!\nMoving to: ' + os.path.join(os.path.basename(grandParentFolder), destFileName) + '\n'
+            
+            # return (origFolder, origFilename)
+            if moveMedia(origAbsoluteFile, os.path.join(grandParentFolder, destFileName)):
+                deleted = checkAndDeleteFolder(origFolder)
+                if Debug > -1:
+                    if deleted:
+                        local.output+='ETTV subfolder fixed\n'
+                    else:
+                        local.output+='ETTV subfolder fixed, but not yet empty!\n'
+                return (grandParentFolder, destFileName)
+            else:
+                if Debug > -1:
+                    local.output+='ETTV subfolder detected, but failed to fix\n'
+                return (origFolder, origFilename)
+        else:
+            if Debug > 0:
+                local.output+='ETTV Parent is different than Son\n'
+    else:
+        if Debug > 1:
+            local.output+='No ETTV subfolder detected, nothing to fix\n'
+    return (origFolder, origFilename)
 
 # Create hardlink
 def createLinkSameName(Folder, Movie, Destination, HardLink=True):
@@ -953,40 +1024,6 @@ def createLinkSameName(Folder, Movie, Destination, HardLink=True):
             print()
 
     return
-
-# Normalize usual video tags for easier comparison
-def normalizeTags(tag):
-    tag = tag.lower()
-    if tag in ['bluray', 'blueray', 'brip', 'brrip', 'bdrip']:
-        return 'bluray'
-    if tag in ['dvdrip', 'dvd', 'sd']:
-        return 'dvd'
-    if tag in ['x264', 'h264']:
-        return 'x264'
-
-    if tag in ['480', '480p', '480i']:
-        return '480'
-    if tag in ['540', '540p', '540i']:
-        return '540'
-    if tag in ['720', '720p', '720i']:
-        return '720'
-    if tag in ['1080', '1080p', '1080i']:
-        return '1080'
-
-    if tag in ['directors', 'dircut']:
-        return 'directors'
-    return tag
-
-def deNormalizeQuality(quality):
-    quality = quality.lower()
-    if quality in ['bluray', 'blueray', 'brip', 'brrip', 'bdrip']:
-        return ['bluray', 'blueray', 'brip', 'brrip', 'bdrip']
-    if quality in ['dvdrip', 'dvd', 'sd']:
-        return ['dvdrip', 'dvd', 'sd']
-    if quality in ['x264', 'h264']:
-        return ['x264', 'h264']
-    return [quality]
-
 
 def getAppendRating(fullpath, withYear=True, search=False, imdbID=0):
     global count, Debug
@@ -1097,9 +1134,10 @@ def getAppendRating(fullpath, withYear=True, search=False, imdbID=0):
         # return fullFilename
 
     if year != data["Year"]:
-        print("Year changed for: " + movie + ", " + year + " to " + data["Year"])
-        year = data["Year"]
-        changed = True
+        print("Year wrong in: " + movie + " " + year + ", found " + data["Year"])
+        return getAppendRating(fullpath, True, True, 0)
+        #year = data["Year"]
+        #changed = True
 
     if 'imdbRating' in data.keys() and rating != data["imdbRating"] and not '/' in data["imdbRating"]:
         print("Rating changed for: " + movie + ", " + rating + " to " + data["imdbRating"])
@@ -1133,6 +1171,290 @@ def getAppendRating(fullpath, withYear=True, search=False, imdbID=0):
         print("Rating didn't change for: " + foldername)
     return fullFilename
 
+# Normalize usual video tags for easier comparison
+def normalizeTags(tag):
+    tag = tag.lower()
+    if tag in ['bluray', 'brrip', 'blueray', 'brip', 'bdrip']:
+        return 'bluray'
+    if tag in ['dvdrip', 'dvd', 'sd']:
+        return 'dvd'
+    if tag in ['webrip', 'webdl']:
+        return 'webdl'
+    if tag in ['hdtv', 'pdtv']:
+        return 'hdtv'
+
+    if tag in ['x264', 'h264']:
+        return 'x264'
+
+    if tag in ['480', '480p', '480i']:
+        return '480p'
+    if tag in ['540', '540p', '540i']:
+        return '540p'
+    if tag in ['720', '720p', '720i']:
+        return '720p'
+    if tag in ['1080', '1080p', '1080i']:
+        return '1080p'
+
+    if tag in ['proper', 'repack']:
+        return 'repack'
+
+    if tag in ['directors', 'dircut']:
+        return 'directors'
+    return tag
+
+def fixTags(filename):
+    filename=re.sub("[^a-zA-Z0-9](h|x)[^a-zA-Z0-9]264[^a-zA-Z0-9]", '.x264.', filename)
+
+    filename=re.sub("[^a-zA-Z0-9]hd[^a-zA-Z0-9]tv[^a-zA-Z0-9]", '.hdtv.', filename)
+    filename=re.sub("[^a-zA-Z0-9]web[^a-zA-Z0-9]dl[^a-zA-Z0-9]", '.webdl.', filename)
+    filename=re.sub("[^a-zA-Z0-9]web[^a-zA-Z0-9]rip[^a-zA-Z0-9]", '.webrip.', filename)
+    filename=re.sub("[^a-zA-Z0-9]dvd[^a-zA-Z0-9]rip[^a-zA-Z0-9]", '.dvdrip.', filename)
+    filename=re.sub("[^a-zA-Z0-9]b(d|r)?[^a-zA-Z0-9]rip[^a-zA-Z0-9]", '.brrip.', filename)
+
+    filename=re.sub("[^a-zA-Z0-9]dd5[^a-zA-Z0-9]1[^a-zA-Z0-9]", '.dd51.', filename)
+
+    filename=re.sub("[^a-zA-Z0-9](en?|it|fr|es)[^a-zA-Z0-9]subs[^a-zA-Z0-9]", '.esubs.', filename)
+    return filename
+
+def parseFileName(filename, isShow=False):
+    
+    detected={'ShowName':[], 'Year':[], 'Season':[], 'Episode':[], 'Group':[], 'Quality':[], 'Size':[], 'Undesired':[], 'Unknown':[]}
+    
+    # Start analyzis per-se
+    filename = filename.lower()
+    filename = fixTags(filename)
+    
+    search_string = re.split('[^a-zA-Z0-9]', filename)
+
+    # Removing empty strings
+    search_string = [ st for st in search_string if st ]
+
+    # Removing Extensions
+    if search_string[-1] in valid_extension_modifiers:
+        search_string.pop()
+    if search_string[-1] in valid_video_extensions:
+        search_string.pop()
+    if search_string[-1] in valid_subtitle_extensions:
+        search_string.pop()
+    if search_string[-1] in valid_extension_modifiers:
+        search_string.pop()
+    if search_string[-1] in valid_video_extensions:
+        search_string.pop()
+    if search_string[-1] in valid_subtitle_extensions:
+        search_string.pop()
+
+    # Removing Garbage
+    #for idx, val in reversed(list(enumerate(search_string))):
+    #     if val in garbage:
+    #        search_string.pop(idx)
+    #        continue
+    
+    ## To speed up searching for season tag later
+    if re.match(".+[^a-zA-Z0-9]s?\d\d[xe]\d\d([xe]\d\d)?.*", filename, re.I):
+        standardSeasonFormat=True
+    else:
+        standardSeasonFormat=False
+    
+    
+    #possibleGroup = search_string[0]
+    possibleGroup=""
+    
+    endOfName=0
+    for item in search_string:
+        
+        # Found season and episode tag
+        if standardSeasonFormat and re.match("[s]?\d?\d[xe]\d\d([xe]\d\d)?", item):
+            tmpregex = re.search('[s]?(\d?\d)[xe](\d\d)(?:[xe](\d\d))?',item)
+            detected['Season'].append(int(tmpregex.group(1)))
+            detected['Episode'].append(int(tmpregex.group(2)))
+            if tmpregex.lastindex>2:
+                detected['Episode'].append(int(tmpregex.group(3)))
+            endOfName = 1
+            continue
+        
+        # Found video resolution tag
+        if sizeRegex.match(item):
+            detected['Size'].append(normalizeTags(item))
+            endOfName = 1
+            continue
+        
+        # Found a 4 digits number, probably Year
+        if re.match("\d\d\d\d", item):
+            detected['Year'].append(item)
+            endOfName = 1
+            continue
+
+        # Found a 3 digits number
+        if len(detected['ShowName'])>0 and not standardSeasonFormat and re.match("\d\d\d", item):
+            tmpregex = re.search('(\d)(\d\d)',item)
+            detected['Season'].append(int(tmpregex.group(1)))
+            detected['Episode'].append(int(tmpregex.group(2)))
+            endOfName = 1
+            continue
+        
+        # Found well-known group
+        if item in known_release_groups:
+            detected['Group'].append(item)
+            endOfName = 1
+            continue
+
+        # Found generic quality tag
+        if item in video_quality:
+            detected['Quality'].append(normalizeTags(item))
+            endOfName = 1
+            continue
+
+        # Found known garbage
+        if item in garbage:
+            continue
+            
+        # Found known garbage
+        if item in clean_name_from:
+            continue
+            
+        # Found undesired word
+        if item in undesired:
+            detected['Undesired'].append(item)
+            endOfName = 1
+            continue
+            
+        # 2CDs video found
+        if re.match("cd\d", item) or re.match("\dcd", item):
+            detected['Quality'].append('2cd')
+            detected['Quality'].append(item)
+            endOfName = 1
+            continue
+        
+        if not endOfName:
+            detected['ShowName'].append(item)
+            # if re.match("^\d$", item): # After a number, consider the rest as Unknown
+            #     endOfName = 2
+            continue
+        
+        #if endOfName == 2:
+        #    outSubTitle.append(item)
+        #    continue
+        
+        if not detected['Group']: # Last unknown is possibly the release group
+            if possibleGroup:
+                detected['Unknown'].append(possibleGroup)
+            possibleGroup = item
+            continue
+        
+        detected['Unknown'].append(item)
+        
+    if not detected['Group'] and possibleGroup:
+        detected['Group'].append(possibleGroup)
+    
+    if (not detected['Season'] and len(detected['Year'])>1) or (isShow and not detected['Season'] and detected['Year']):
+        item=detected['Year'].pop()
+        detected['Season'].append(int(re.sub("(\d\d)(\d\d)", '\\1', item)))
+        detected['Episode'].append(int(re.sub("(\d\d)(\d\d)", '\\2', item)))
+        
+    return detected
+    
+def calculateSimilarity(originalShow, possibleShow):
+    similarity=100
+    
+    if Debug > 1:
+        local.output+='Processing Release:\n'
+        local.output+='ShowName='+str(possibleShow['ShowName'])+'\n'
+        local.output+='Year='+str(possibleShow['Year'])+'\n'
+        local.output+='Season='+str(possibleShow['Season'])+'\n'
+        local.output+='Episode='+str(possibleShow['Episode'])+'\n'
+        local.output+='Group='+str(possibleShow['Group'])+'\n'
+        local.output+='Quality='+str(possibleShow['Quality'])+'\n'
+        local.output+='Size='+str(possibleShow['Size'])+'\n'
+        local.output+='Undesired='+str(possibleShow['Undesired'])+'\n'
+        local.output+='Unknown='+str(possibleShow['Unknown'])+'\n'
+        local.output+='\n'
+    
+    ### Evaluate name
+    # Quickly XOR both name-lists to detect differences
+    if (set(originalShow['ShowName']) ^ set(possibleShow['ShowName'])):
+        for tmp in [j for j in originalShow['ShowName']]:
+            if tmp not in possibleShow['ShowName']:
+                if Debug > 2:
+                    local.output+='-20, Missing word: '+tmp+' in name: '+str(possibleShow['ShowName'])+'\n'
+                similarity -= 20
+        # Check for reverse missing names
+        for tmp in [j for j in possibleShow['ShowName']]:
+            if tmp not in originalShow['ShowName']:
+                if Debug > 1:
+                    local.output+='-15, Too many words: '+tmp+' in release: '+str(possibleShow['ShowName'])+'\n'
+                similarity -= 15
+    
+    ### Evaluate Year if present
+    # Quickly check if there's a common Year and pass on
+    if not (set(originalShow['Year']) & set(possibleShow['Year'])):
+        if originalShow['Year']:
+            if originalShow['Year'][0] not in possibleShow['Year']:
+                if possibleShow['Year']:
+                    if Debug > 2:
+                        local.output+='-15, Wrong Year: '+str(originalShow['Year'][0])+' in: '+str(possibleShow['Year'])+'\n'
+                    similarity -= 15
+                else:
+                    if Debug > 2:
+                        local.output+='-8, Missing Year: '+str(originalShow['Year'][0])+'\n'
+                    similarity -= 8
+            
+    ### Evaluate season number in name
+    # Quickly check if there's a common Year and pass on
+    if (set(originalShow['Season']) ^ set(possibleShow['Season'])):
+        if originalShow['Season']:
+            if originalShow['Season'][0] not in possibleShow['Season']:
+                if Debug > 2:
+                    local.output+='-15, Missing Season: '+str(originalShow['Season'])+' in: '+str(possibleShow['Season'])+'\n'
+                similarity -= 15
+    if (set(originalShow['Episode']) ^ set(possibleShow['Episode'])):
+        if originalShow['Episode']:
+            if originalShow['Episode'][0] not in possibleShow['Episode']:
+                if Debug > 2:
+                    local.output+='-10, Missing Episode: '+str(originalShow['Episode'])+' in: '+str(possibleShow['Episode'])+'\n'
+                similarity -= 10
+
+    ### Filter group
+    # Quickly check if there's a common Group and pass on
+    if not (set(originalShow['Group']) & set(possibleShow['Group'])):
+        if originalShow['Group']:
+            for tmp in [j for j in originalShow['Group']]:
+                if tmp not in possibleShow['Group'] and tmp not in possibleShow['Unknown']:
+                    if Debug > 1:
+                        local.output+="-20, Groups don't match perfectly: "+str(originalShow['Group'])+' to '+str(possibleShow['Group'])+'\n'
+                    similarity -= 20
+    
+    ### Filter size
+    # Quickly check if there's a common Size and pass on
+    if not (set(originalShow['Size']) & set(possibleShow['Size'])):
+        if originalShow['Size']:
+            for tmp in [j for j in originalShow['Size']]:
+                if tmp not in possibleShow['Size'] and tmp not in possibleShow['Unknown']:
+                    if Debug > 1:
+                        local.output+="-14, Size doesn't match perfectly: "+str(originalShow['Size'])+' to '+str(possibleShow['Size'])+'\n'
+                    similarity -= 14
+    
+    ### Filter quality
+    # Quickly XOR both quality-lists to detect differences
+    if (set(originalShow['Quality']) ^ set(possibleShow['Quality'])):
+        for tmp in [j for j in originalShow['Quality']]:
+            if tmp not in possibleShow['Quality']:
+                if Debug > 2:
+                    local.output+='-5, Missing quality: '+tmp+' in name: '+str(possibleShow['Quality'])+'\n'
+                similarity -= 5
+        # Check for reverse missing names
+        for tmp in [j for j in possibleShow['Quality']]:
+            if tmp not in originalShow['Quality']:
+                if Debug > 1:
+                    local.output+='-3, Too many qualities: '+tmp+' in release: '+str(possibleShow['Quality'])+'\n'
+                similarity -= 3
+    
+    # Devalue undesired words
+    for tmp in possibleShow['Undesired']:
+        if Debug > 2:
+            local.output+='-2, Undesired word found: '+tmp+'\n'
+        similarity -= 2
+        
+    return similarity
 
 # Threaded function: grab from queue and analyze
 def ltvdownloader(videosQ):
@@ -1173,13 +1495,15 @@ def ltvdownloader(videosQ):
 
             # Remove garbage of movie name and accompanying files
             if clean_name:
+                if fix_ETTV_subfolder:
+                    dirpath, originalFilename = cleanAndMoveFromSubfolder(dirpath, originalFilename)
                 originalFilename = cleanAndRenameFile(dirpath, originalFilename)
             
             # check already existing subtitles to avoid re-download
             existSubs=[]
             subFound=''
             sublang=''
-
+            
             # Check without language
             tmp = os.path.splitext(os.path.join(dirpath, originalFilename))[0] + '.s*'
 
@@ -1228,118 +1552,39 @@ def ltvdownloader(videosQ):
                     continue
 
             ###############################
-
-            # Start analyzis per-se
-            search_string = originalFilename.lower()
-            search_string = re.split('[\ \.\-\_\[\]\&\(\)]', search_string)
-
-            # Removing empty strings
-            search_string = [ st for st in search_string if st ]
-
-            # Removing Extensions
-            if search_string[-1] in valid_extension_modifiers:
-                search_string.pop()
-            if search_string[-1] in valid_video_extensions:
-                search_string.pop()
-            if search_string[-1] in valid_video_extensions:
-                search_string.pop()
-
-            # Clean first word if number
-            if re.match("^\d\d$", search_string[0]):
-                search_string.pop(0)
-
-            # Removing Garbage
-            for idx, val in reversed(list(enumerate(search_string))):
-                if val in garbage:
-                    search_string.pop(idx)
-                    continue
             
-            if len(search_string)==0:
-                if Debug > -1:
-                    local.output+='! Error, this video is just garbage: '+originalFilename+'\n'
-                with lock:
-                    statistics['Failed'] += 1
-                continue
-
-
-            sizeRegex = re.compile("("+'|'.join(video_size)+")(i|p)?", re.I)
-
-            possibleGroup = search_string[0]
-            tagFound=0
-            for item in search_string:
-                
-                # found season and episode tag
-                if re.match("[s]?\d?\d[xe]\d\d([xe]\d\d)?$", item, re.I):
-                    season=re.sub("[s]?0?([1-9]?\d)[xe](\d\d)([xe](\d\d))?", '\\1', item)
-                    episode=re.sub("[s]?0?([1-9]?\d)[xe](\d\d)([xe](\d\d))?", '\\2', item)
-                    tagFound = 1
-                    continue
-
-                # 2CDs video found
-                if re.match("^cd\d$", item, re.I):
-                    quality.append('2cd')
-                    quality.append(item)
-                    tagFound = 1
-                    continue
-
-                # found well-known group
-                if item in release_groups:
-                    group = item
-                    tagFound = 1
-                    continue
-
-                # found generic quality tag
-                if item in video_quality:
-                    quality.append(item)
-                    tagFound = 1
-                    continue
-
-                # found video resolution tag
-                if sizeRegex.match(item):
-                    if size:
-                        with lock:
-                            statistics['Errors'] += 1
-                        if Debug > 2:
-                            local.output+='! Error, 2 Sizes in file?!?! '+size+' & '+item+'\n'
-                    size = sizeRegex.sub('\\1', item)
-                    tagFound = 1
-                    continue
-                
-                # Removing Year
-                if re.match("\d{4}", item):
-                    year = item
-                    tagFound = 1
-                    continue
-
-                if not tagFound:
-                    videoTitle.append(item)
-                    if re.match("^\d$", item):
-                        tagFound = 2
-                    # After a number, consider the rest as subtitle
-                elif tagFound == 2:
-                    videoSubTitle.append(item)
-                else:
-                    # Last unknown is usually the release group
-                    possibleGroup = item
-
-                continue
+            parsedShow = parseFileName(originalFilename)
+            if Debug > 0:
+                local.output+='Processed name:\n'
+                local.output+='outShowName='+str(parsedShow['ShowName'])+'\n'
+                local.output+='outYear='+str(parsedShow['Year'])+'\n'
+                local.output+='outSeason='+str(parsedShow['Season'])+'\n'
+                local.output+='outEpisode='+str(parsedShow['Episode'])+'\n'
+                local.output+='outGroup='+str(parsedShow['Group'])+'\n'
+                local.output+='outQuality='+str(parsedShow['Quality'])+'\n'
+                local.output+='outSize='+str(parsedShow['Size'])+'\n'
+                local.output+='outUndesired='+str(parsedShow['Undesired'])+'\n'
+                local.output+='outUnknown='+str(parsedShow['Unknown'])+'\n'
+                local.output+='\n'
             
-            ########################
-            
-            if not videoTitle:
-                with lock:
-                    statistics['Failed'] += 1
-                if Debug > -1:
-                    local.output+='! Error, no name detected\n'
-                continue
-
-            if not group:
-                group = possibleGroup
-                if Debug > 0:
-                    local.output+='Group not known. Using: '+group+'\n'
-
             with lock:
-                if season and episode:
+                if not parsedShow['ShowName']:
+                    statistics['Failed'] += 1
+                    if Debug > -1:
+                        local.output+='! Error, failed to parse show name from: '+originalFilename+'\n'
+                    continue
+                
+                if len(parsedShow['Size'])>1:
+                    statistics['Errors'] += 1
+                    if Debug > -1:
+                        local.output+='! Error, two Sizes in file: '+str(parsedShow['Size'])+' in '+originalFilename+'\n'
+                
+                if not parsedShow['Group']:
+                    statistics['Errors'] += 1
+                    if Debug > -1:
+                        local.output+="! Error, couldn't parse Release Group from: "+originalFilename+'\n'
+
+                if parsedShow['Season'] and parsedShow['Episode']:
                     statistics['Shows'] += 1
                 else:
                     statistics['Movies'] += 1
@@ -1347,14 +1592,8 @@ def ltvdownloader(videosQ):
             if Debug > 2:
                 local.output+='------------------\n'
 
-            subtitle = ltv.search(videoTitle, videoSubTitle, year, season, episode, group, size, quality)
-            if subtitle and subtitle['%'] < confidence_threshold:
-                with lock:
-                    if local.wanted_languages == preferred_languages:
-                        statistics['NoSubs'] += 1
-                    else:
-                        statistics['NoBest'] += 1
-
+            subtitle = ltv.search(parsedShow)
+            
             if not subtitle:
                 with lock:
                     if local.wanted_languages == preferred_languages:
@@ -1365,9 +1604,14 @@ def ltvdownloader(videosQ):
                         statistics['NoBest'] += 1
                         if Debug > -1:
                             local.output+='No better subtitles found\n'
-                    continue
+                continue
             
             if subtitle['%'] < confidence_threshold:
+                with lock:
+                    if local.wanted_languages == preferred_languages:
+                        statistics['NoSubs'] += 1
+                    else:
+                        statistics['NoBest'] += 1
                 if Debug > -1:
                     local.output+='Only bad subtitles, similiarity: '+str(subtitle['%'])+'\n'
                 continue
@@ -1381,7 +1625,8 @@ def ltvdownloader(videosQ):
             
             if Debug == 0:
                 local.output+='ed: '+subtitle['language']
-            ltv.extract_sub(dirpath, originalFilename, group, size, quality, subtitle['language'])
+                
+            ltv.extract_sub(dirpath, originalFilename, parsedShow, subtitle['language'])
             if Debug == 0:
                 local.output+=', '+subtitle['release']+'\n'
             continue
@@ -1417,33 +1662,34 @@ if __name__ == '__main__':
     global statistics
     global ltv
 
-    garbage = [x.lower() for x in ['Unrated', 'DC', 'Dual', 'VTV', 'eng', 'subbed', 'artsubs', 'sample', 'ExtraTorrentRG', 'StyLish', 'Release', 'US' ]]
-    undesired = [x.lower() for x in ['.HI.', '.Impaired.', '.Comentários.', '.Comentarios.' ]]
-    video_quality = [x.lower() for x in ['HDTV', 'XviD', 'DivX', 'x264', 'BluRay', 'BRip', 'BRRip', 'BDRip', 'DVDrip', 'DVD', 'AC3', 'DTS', 'TS', 'R5', 'R6', 'DVDScr', 'PROPER', 'REPACK' ]]
-    video_size = [x.lower() for x in ['480', '720', '1080']]
-    release_groups = [x.lower() for x in known_release_groups]
-
     preferred_languages = [x.lower() for x in preferred_languages]
     clean_name_from = [x.lower() for x in clean_name_from]
     valid_video_extensions = [x.lower() for x in valid_video_extensions]
     valid_subtitle_extensions = [x.lower() for x in valid_subtitle_extensions]
+    
+    known_release_groups = [x.lower() for x in known_release_groups]
+    garbage = [x.lower() for x in garbage]
+    undesired = [x.lower() for x in undesired]
+    video_quality = [x.lower() for x in video_quality]
+    video_size = [x.lower() for x in video_size]
+    
+    sizeRegex = re.compile("("+'|'.join(video_size)+")(i|p)", re.I)
     
     statistics={'Videos':0, 'NotVideos':0, 'Folders':0, 'Shows':0, 'Movies':0, 'Failed':0, 'Errors':0, 'Best':0, 'DL':0, 'Upg':0, 'NoBest':0, 'NoSubs':0, 'PT':0, 'BR':0, 'EN':0}
 
 
     ltv = LegendasTV(ltv_username, ltv_password)
 
-    if Debug > -1:
-        print('Logging in Legendas.TV')
-    
-    if not ltv.login():
+    if not OnlyIMDBRating:
         if Debug > -1:
-            print('Press any key to exit...')
-        junk = getch()
-        sys.exit()
-    
-    if Debug > 0:
-        print('Logged with success!')
+            print('Logging in Legendas.TV')
+        if not ltv.login():
+            if Debug > -1:
+                print('Press any key to exit...')
+            junk = getch()
+            sys.exit()
+        if Debug > 0:
+            print('Logged with success!')
 
     input_string = sys.argv[1:]
 
@@ -1462,7 +1708,7 @@ if __name__ == '__main__':
 
 
     if Debug > -1:
-        print('Listing files. First results can take a few seconds.\n')
+        print('Parsing arguments. First results can take a few seconds.\n')
 
     OriginalInputFinished = False
 
@@ -1470,7 +1716,7 @@ if __name__ == '__main__':
     # Parsing all arguments (Files)
     for originalFilename in input_string:
         dirpath=''
-
+        
         if Done: # Signal received
             break
 
@@ -1490,6 +1736,8 @@ if __name__ == '__main__':
             continue
 
         if originalFilename == '-OnlyIMDBRating':
+            if Debug > -1:
+                print('Only doing IMDB Rating!')
             OnlyIMDBRating = True
             continue
 
@@ -1518,12 +1766,14 @@ if __name__ == '__main__':
             if len(input_string)<=2:
                 ForceSearch=True
                 if Debug > -1:
-                    local.output+='Single argument: Forcing search, ignore existing subs\n'
+                    print('Single argument: Forcing search, ignore existing subs')
         
         elif os.path.isdir(originalFilename):
-
             if not recursive_folders:
-                if OriginalInputFinished:
+                if fix_ETTV_subfolder and re.match(".+[^a-zA-Z0-9]S\d\dE\d\d(E\d\d)?[^a-zA-Z0-9].+", originalFilename):
+                    if Debug > 0:
+                        print('Found ETTV folder: %s' % (originalFilename))
+                elif OriginalInputFinished:
                     if Debug > 2:
                         print('Directory found, recursiveness OFF: %s' % (originalFilename))
                     continue
@@ -1531,7 +1781,7 @@ if __name__ == '__main__':
                     if originalFilename != '.':
                         recursive_folders = True
                     if Debug > -1:
-                        print('Searching whole directory: %s' % (os.path.abspath(originalFilename)))
+                        print('Searching whole directory: %s' % (originalFilename))
             else:
                 if Debug > 0:
                     print('Recursing directory: %s' % (os.path.abspath(originalFilename)))
