@@ -12,12 +12,22 @@ Please, use the **issues** tab to make suggestions and file bugs.
 
 ## Quick HowTo:
 
-1. Install python v3.x
+1. Install python v3.x (also supports v2.x, but 3.x is recommended)
 2. Make sure UNRAR is in your PATH variable and available on console (e.g.: download from http://www.rarlab.com/rar_add.htm)
 3. Open the file 'ltv-downloader.py' with any text editor to edit the initial configuration:
      Only your USERNAME and PASSWORD are required to be edited, other changes are optional.
 4. Drag-and-Drop videos or folders on 'ltv-downloader.py' (or a shortcut of it, with extra arguments such as "-OnlyIMDBRating" to update Ratings without downloading subtitles)
 5. Enjoy!
+
+
+Optional arguments:
+
+-d : Increase debug verbosity
+-dd : Increase debug verbosity even more
+-r : Recurse folders appearing after this argument
+-f : Force search, even if best/acceptable/no-language subtitle is already present
+-OnlyIMDBRating : Just add the IMDB rating to the name (Not working since API became paid: http://www.omdbapi.com/ )
+-s : Silent Mode, never waits for user input to continue/exit
 
 
 ## More details:
