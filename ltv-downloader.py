@@ -701,7 +701,7 @@ class LegendasTV:
             local.output+='Files in Archive: ' + str(files)+'\n'
 
         srts = []
-        current_maxpoints = 0
+        current_maxpoints = -100
         best_rarfile = []
 
         for current_rarfile in files:
@@ -733,7 +733,7 @@ class LegendasTV:
         if Debug > 2:
             local.output+='-------\n'
 
-        if not best_rarfile or current_maxpoints<1:
+        if not best_rarfile or current_maxpoints<-99:
             if Debug > -1:
                 local.output+='! Error: No valid subs found on archive\n'
             with lock:
