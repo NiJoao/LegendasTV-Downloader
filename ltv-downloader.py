@@ -1,9 +1,11 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
+from __future__ import print_function
+from __future__ import unicode_literals    # at top of module
 
 #### User Configurations ####
 
-## Fill yours - This is again REQUIRED by the LTV website.
+## Fill yours - This is REQUIRED by the LTV website.
 ltv_username = 'USERNAME'
 ltv_password = 'PASS'
 
@@ -18,7 +20,7 @@ append_language = True
 # Download one subtitle file for each of the prefered languages
 download_each_lang = False
 # Remove old subtitle languages when a prefered becomes available
-clean_old_language = True
+clean_old_language = False
 
 # Append a confidence/quality number to then end of the subtitle file. Allows "upgrading" with the same language
 # Most players ignore this last number and correctly identify the srt file. If not, make this False
@@ -47,7 +49,7 @@ fix_ETTV_subfolder = True
 
 # Rename and clean videos and accompanying files from this garbage-tags 
 clean_original_filename = True
-clean_name_from = ['VTV','www.torentz.3xforum.ro','MyTV','rarbg','eztv','ettv']
+clean_name_from = ['VTV','www.torentz.3xforum.ro','MyTV','RARBG','rartv','eztv','ettv']
 
 
 Debug = 0
@@ -70,11 +72,11 @@ valid_subtitle_extensions = ['srt','txt','aas','ssa','sub','smi']
 valid_video_extensions = ['avi','mkv','mp4','wmv','mov','mpg','mpeg','3gp','flv']
 valid_extension_modifiers = ['!ut','part','rar','zip']
 
-known_release_groups = ['LOL','killers','ASAP','dimension','ETRG','fum','ift','2HD','FoV','FQM','DONE','vision','fleet'
+known_release_groups = ['YTS','LOL','killers','ASAP','dimension','ETRG','rarbg','fum','ift','2HD','FoV','FQM','DONE','vision','fleet'
 ,'Yify','MrLss','fever','p0w4','TLA','refill','notv','reward','bia','maxspeed','FiHTV','BATV','SickBeard','sfm']
 
 # garbage is ignored from filenames
-garbage = ['Unrated', 'DC', 'Dual', 'VTV', 'esubs', 'eng', 'subbed', 'artsubs', 'sample', 'ExtraTorrentRG', 'StyLish', 'Release', 'Internal', '2CH' ]
+garbage = ['Unrated', 'DC', 'Dual', 'VTV', 'ag', 'esubs', 'eng', 'subbed', 'artsubs', 'sample', 'ExtraTorrentRG', 'StyLish', 'Release', 'Internal', '2CH' ]
 
 # undesired wordslowers the confidence weight if detected
 undesired = ['.HI.', '.Impaired.', '.Comentários.', '.Comentarios.' ]
@@ -93,7 +95,8 @@ import os, sys, traceback
 import json, re
 import shutil, stat, glob, filecmp, tempfile
 import signal, platform
-import threading, queue, time, random
+import threading, time, random
+
 
 from zipfile import ZipFile
 
@@ -127,17 +130,21 @@ else:
     if Debug > 2:
         print('Unix system detected')
     import sys, tty
-    fd = sys.stdin.fileno()
+    #fd = sys.stdin.fileno()
+    #if not os.isatty(sys.stdin.fileno()):
+    #    # Cron Mode
     tty.setraw(sys.stdin.fileno())
     getch = sys.stdin.read(1)
 
 
-REQUIREMENTS = [ 'requests' , 'beautifulsoup4', 'rarfile' ]
+REQUIREMENTS = [ 'future', 'requests' , 'beautifulsoup4', 'rarfile' ]
 
 try:
+    from future.utils import iteritems
     import requests
     from bs4 import BeautifulSoup
     from rarfile import RarFile
+    from queue import Queue, Empty
 except (Exception) as e:
     print('! Missing requirements. '+str(type(e)))
     import os, pip
@@ -155,14 +162,16 @@ except (Exception) as e:
     pip.main(pip_args)
     # pip.main(initial_args = pip_args)
  
-    # do it again
+    # try to import again
     try:
+        from future.utils import iteritems
         import requests
         from bs4 import BeautifulSoup
         from rarfile import RarFile
+        from queue import Queue, Empty
         print('Sucessfully installed the required libraries\n')
     except (Exception) as e:
-        print('\nPython modules needed: beautifulsoup4, rarfile, requests')
+        print('\nPython modules needed: ' + str(REQUIREMENTS))
         print('We failled to install them automatically: '+str(type(e)))
         print('! Traceback:')
         traceback.print_exc(file=sys.stdout)
@@ -173,7 +182,7 @@ except (Exception) as e:
         print('\nPress any key to exit...')
         if Debug > -1:
             junk = getch()
-        sys.exit()
+        sys.exit('Unmet dependencies: requests beautifulsoup4 rarfile')
 
 
 
@@ -183,7 +192,7 @@ def signal_handler(signal, frame):
     videosQ.queue.clear()
     print('Cleared List. Terminating in 5s')
     time.sleep(5)
-    sys.exit()
+    sys.exit('User ordered a termination')
 signal.signal(signal.SIGINT, signal_handler)
 
 
@@ -260,7 +269,7 @@ def UpdateFile(src, dst):
             
         except (Exception) as e:
             exc = e
-            time.sleep(0.5)
+            time.sleep(0.1)
             pass
     
     print('\nSomething went wrong renaming files: '+str(type(exc))+'\n'+src+'\nto:\n'+dst)
@@ -302,7 +311,6 @@ class LegendasTV:
         
     ## Login in legendas.tv
     def login(self):
-        
         login_data= {'data[User][username]':self.username,'data[User][password]':self.password, '_method':'POST'}
         
         try:
@@ -313,7 +321,7 @@ class LegendasTV:
                 print('! Error, loging in! '+str(type(e)))
             return False
         
-        if "Usuário ou senha inválidos" in r.text:
+        if "rio ou senha inv" in r.text:
             if Debug > -1:
                 print('! Error, wrong login user/pass!')
             return False
@@ -409,7 +417,7 @@ class LegendasTV:
                             statistics['Failed'] += 1
                         return False
                         
-                    soup = BeautifulSoup(r.text)
+                    soup = BeautifulSoup(r.text, "html.parser")
 
                     div_results = soup.find('div',{'class':'gallery clearfix list_element'})
                     if div_results:
@@ -659,9 +667,23 @@ class LegendasTV:
                 if Debug > 2:
                     local.output+='rar file...\n'
             except:
-                if Debug > -1:
-                    local.output+='! Error, Error opening archive: '+self.archivename+'\n'
-                    local.output+='UNRAR must be available on console\n'
+                if self.archivename.endswith(tuple(valid_subtitle_extensions)):
+                    if Debug > -1:
+                        local.output+='\n! Error! Downloaded file was not an archive: '+self.archivename+'\n'
+                else:
+                    if Debug > -1:
+                        local.output+='\n! Error! Opening archive: '+self.archivename+'\n'
+                        local.output+='UNRAR must be available on console\n'
+                        
+                if os.path.getsize(self.archivename) < 1500:
+                    fp = open(self.archivename, "r")
+                    content = fp.read()
+                    fp.close()
+                    if Debug > -1:
+                        local.output+='\n! Small file, content: '+content+'\n'
+                
+                with lock:
+                    statistics['Failed'] += 1
                 return False
 
         language_compensation = 0
@@ -675,18 +697,21 @@ class LegendasTV:
 
         files = archive.infolist()
             
+        if Debug > 2:
+            local.output+='Files in Archive: ' + str(files)+'\n'
+
         srts = []
         current_maxpoints = 0
-        current_maxfile = []
+        best_rarfile = []
 
-        for srtname in files:
+        for current_rarfile in files:
             
-            testname = srtname.filename.lower()
+            testname = current_rarfile.filename.lower()
             testname = os.path.basename(str(testname))
             
             if not testname.endswith(tuple(valid_subtitle_extensions)+('rar', 'zip')):
                 if Debug > 2:
-                    local.output+='Non Sub file: ' + str(srtname)+'\n'
+                    local.output+='Non Sub file: ' + str(current_rarfile)+'\n'
                 continue
             
             if Debug > 2:
@@ -703,12 +728,12 @@ class LegendasTV:
             
             if current_maxpoints<points:
                 current_maxpoints = points
-                current_maxfile = srtname
+                best_rarfile = current_rarfile
 
         if Debug > 2:
             local.output+='-------\n'
 
-        if not current_maxfile or current_maxpoints<1:
+        if not best_rarfile or current_maxpoints<1:
             if Debug > -1:
                 local.output+='! Error: No valid subs found on archive\n'
             with lock:
@@ -717,7 +742,7 @@ class LegendasTV:
 
         extract = []
         
-        extract.append(current_maxfile)
+        extract.append(best_rarfile)
 
         # maximum=confidence_threshold
         # for idx, [p, n] in enumerate(srts):
@@ -728,12 +753,13 @@ class LegendasTV:
             
         ## Extracting
         for fileinfo in extract:
-            fileinfo.filename = os.path.basename(fileinfo.filename)
+            dest_filename = os.path.basename(fileinfo.filename) # This prevents from extracting from sub-folders
+            # fileinfo.filename = os.path.basename(fileinfo.filename) # This prevents from extracting from sub-folders
             
             if Debug > 2:
-                local.output+='Extracted '+fileinfo.filename+' with ' +str(current_maxpoints+language_compensation)+'%\n'
+                local.output+='Extracted '+dest_filename+' with ' +str(current_maxpoints+language_compensation)+'%\n'
 
-            if fileinfo.filename.endswith(('rar', 'zip')):
+            if dest_filename.endswith(('rar', 'zip')):
                 if Debug > 2:
                     local.output+='Recursive extract, RAR was inside: '+fileinfo.filename+'\n'
                 archive.extract(fileinfo, self.download_path)
@@ -742,8 +768,6 @@ class LegendasTV:
                     return False
                 continue
             
-            dest_filename = fileinfo.filename
-
             if len(extract) == 1 and rename_subtitle:
                 dest_filename = os.path.splitext(originalFilename)[0] + os.path.splitext(dest_filename)[1]
             
@@ -781,12 +805,13 @@ class LegendasTV:
                     elif language == 'en':
                         statistics['EN'] += 1
             
-            except (Exception):
+            except (Exception) as e:
                 with lock:
                     statistics['Failed'] += 1
-                if Debug > -1:
+                if Debug > 0:
+                    local.output+='! Error, decrompressing! '+str(type(e))+'\n'
+                elif Debug > -1:
                     local.output+='! Error, decrompressing!\n'
-                return False
 
             if clean_old_language:
                 tmp = os.path.splitext(os.path.join(dirpath, originalFilename))[0] + '.??.s*'
@@ -850,6 +875,8 @@ def checkAndDeleteFolder(src):
     for files in os.listdir(src):
         if Debug > 2:
             local.output+='File found: '+files+' with ext: '+os.path.splitext(files)[1][1:]+'\n'
+        if files in ['RARBG.COM.mp4','RARBG.mp4']:
+            continue
         if os.path.splitext(files)[1][1:] in [x for x in valid_subtitle_extensions if x != 'txt']:
             return False
         if os.path.splitext(files)[1][1:] in valid_video_extensions:
@@ -863,7 +890,9 @@ def checkAndDeleteFolder(src):
         
     def del_rw(action, name, exc):
         os.chmod(name, stat.S_IWRITE)
+        local.output+='Had to fix permissions to delete file: '+name+'\n'
         os.remove(name)
+        os.removedirs(name)
     shutil.rmtree(src, onerror=del_rw)
     # os.rmdir(src)
     return True
@@ -874,10 +903,10 @@ def cleanAndRenameFile(Folder, filename):
     # Generate Regex
     regex = '(' + '|'.join(clean_name_from)+')'
 
-    if not re.search('[^a-zA-Z0-9]'+regex+'[^a-zA-Z0-9]', filename, re.I):
+    if not re.search('[^a-zA-Z0-9\-]+'+regex+'[^a-zA-Z0-9\-]', filename, re.I):
         return filename
     
-    statementClean = re.compile('[^a-zA-Z0-9]?[\[\(\{]?'+regex+'[\]\)\}]?', re.I)
+    statementClean = re.compile('[^a-zA-Z0-9\-]+'+regex+'[\]\)\}]?', re.I)
     newname = statementClean.sub('', filename)
 
     fullFilename = os.path.join(Folder, filename)
@@ -917,8 +946,10 @@ def cleanAndRenameFile(Folder, filename):
 def cleanAndMoveFromSubfolder(origFolder, origFilename):
     shouldMove = False
     
+    # Generate Regex
     regex = '(' + '|'.join(clean_name_from)+')'
-    statementClean = re.compile('[^a-zA-Z0-9]?[\[\(\{]?'+regex+'[\]\)\}]?', re.I)
+
+    statementClean = re.compile('[^a-zA-Z0-9\-]+'+regex+'[\]\)\}]?', re.I)
 
     origAbsoluteFile = os.path.join(origFolder, origFilename)
     
@@ -932,7 +963,7 @@ def cleanAndMoveFromSubfolder(origFolder, origFilename):
     cleanFilename = statementClean.sub('', origFilename)
     fileExt = os.path.splitext(cleanFilename)[1]
     
-    
+    ## If file and folder have the same full name, move
     if cleanParentFolder == os.path.splitext(cleanFilename)[0]:
         if moveMedia(origAbsoluteFile, os.path.join(grandParentFolder, cleanFilename)):
             deleted = checkAndDeleteFolder(origFolder)
@@ -947,20 +978,22 @@ def cleanAndMoveFromSubfolder(origFolder, origFilename):
                 local.output+='ETTV subfolder detected, but failed to fix\n'
             return (origFolder, origFilename)
     
-    
+    ## If parent has a tv showname, parse its info
     if re.match(".+[^a-zA-Z0-9]S\d\dE\d\d(E\d\d)?[^a-zA-Z0-9].+", cleanParentFolder):
         if Debug > 1:
             local.output+='Father has a TV Show name...'
         try:
-            name=re.sub("(.+[^a-zA-Z0-9])S\d\dE\d\d(E\d\d)?[^a-zA-Z0-9].+", '\\1', cleanParentFolder)
+            name=re.sub("(.+[^a-zA-Z0-9])S\d\dE\d\d(E\d\d)?[^a-zA-Z0-9].+", '\\1', cleanParentFolder) # Including ending \. (dot)
             season=int(re.sub(".+[^a-zA-Z0-9]S(\d\d)E\d\d(E\d\d)?[^a-zA-Z0-9].+", '\\1', cleanParentFolder))
             episode=int(re.sub(".+[^a-zA-Z0-9]S\d\dE(\d\d)(E\d\d)?[^a-zA-Z0-9].+", '\\1', cleanParentFolder))
         except (Exception) as e:
             if Debug > -1:
                 local.output+='Very strange error happened, parsing ETTV folder. Report to programmer please!\n'
             return (origFolder, origFilename)
-            
-        if cleanFilename.startswith((name.lower()+"{:0d}{:02d}").format(int(season), int(episode))):
+        
+        # Check if son-movie is the corresponding episode
+        if ( cleanFilename.lower().startswith((name.lower()+"{:0d}{:02d}").format(int(season), int(episode))) or
+            cleanFilename.lower().startswith((name.lower()+"s{:02d}e{:02d}").format(int(season), int(episode))) ):
             destFileName = cleanParentFolder+fileExt
             if Debug > 1:
                 local.output+='Son has the same!!\nMoving to: ' + os.path.join(os.path.basename(grandParentFolder), destFileName) + '\n'
@@ -980,7 +1013,7 @@ def cleanAndMoveFromSubfolder(origFolder, origFilename):
                 return (origFolder, origFilename)
         else:
             if Debug > 0:
-                local.output+='ETTV Parent is different than Son\n'
+                local.output+='ETTV Parent is different than Son\n'+(name.lower()+"s{:02d}e{:02d}").format(int(season), int(episode))+' VS '+cleanFilename
     else:
         if Debug > 1:
             local.output+='No ETTV subfolder detected, nothing to fix\n'
@@ -1066,15 +1099,16 @@ def getAppendRating(fullpath, withYear=True, search=False, imdbID=0):
         payload['i'] = imdbID
         # data = urllib.parse.urlencode({"i":imdbID})
         
-    elif search:
-        payload['s'] = movie
-        if withYear:
-            payload['y'] = year
     else:
-        payload['t'] = movie
         if withYear:
             payload['y'] = year
-            
+        if search:
+            payload['s'] = movie
+        else:
+            payload['t'] = movie
+    
+    payload['type'] = "movie"
+
     url = 'http://www.omdbapi.com'
     
 
@@ -1108,8 +1142,8 @@ def getAppendRating(fullpath, withYear=True, search=False, imdbID=0):
             data["Search"] = [item for item in data["Search"] if item["Type"]=="movie"]
             
             if len(data["Search"])==1 and 'imdbID' in data["Search"][0].keys():
-                if Debug > 0:
-                    print("Found the movie: " + data["Search"][0]["Title"])
+                if Debug > -1:
+                    print("Found the movie: " + data["Search"][0]["Title"] + " ID:" + data["Search"][0]["imdbID"])
                 return getAppendRating(fullpath, True, False, data["Search"][0]["imdbID"])
             else: 
                 print("Multiple movies found with similar name: " + foldername)
@@ -1135,14 +1169,25 @@ def getAppendRating(fullpath, withYear=True, search=False, imdbID=0):
 
     if year != data["Year"]:
         print("Year wrong in: " + movie + " " + year + ", found " + data["Year"])
-        return getAppendRating(fullpath, True, True, 0)
+        if imdbID:
+            year = data["Year"]
+            changed = True
+        else:
+            return getAppendRating(fullpath, True, True, 0)
         #year = data["Year"]
         #changed = True
 
-    if 'imdbRating' in data.keys() and rating != data["imdbRating"] and not '/' in data["imdbRating"]:
-        print("Rating changed for: " + movie + ", " + rating + " to " + data["imdbRating"])
-        rating = data["imdbRating"]
-        changed = True
+    if 'imdbRating' in data.keys() and not '/' in data["imdbRating"]:
+        if rating != data["imdbRating"]:
+            print("Rating changed for: " + movie + ", " + rating + " to " + data["imdbRating"])
+            rating = data["imdbRating"]
+            changed = True
+        else:
+            if Debug > 0:
+                print("Rating didn't change for: " + foldername)
+    else:
+        if Debug > -1:
+            print("No rating for this movie: " + str(data))
 
     if changed:
         newName = movie
@@ -1168,7 +1213,7 @@ def getAppendRating(fullpath, withYear=True, search=False, imdbID=0):
                 print("Renamed with imdb rating: " + newName)
             return newFullPath
     else:
-        print("Rating didn't change for: " + foldername)
+        print("Rating didn't change for: " + foldername + " = " + rating)
     return fullFilename
 
 # Normalize usual video tags for easier comparison
@@ -1258,12 +1303,12 @@ def parseFileName(filename, isShow=False):
     
     #possibleGroup = search_string[0]
     possibleGroup=""
-    
+
     endOfName=0
     for item in search_string:
         
         # Found season and episode tag
-        if standardSeasonFormat and re.match("[s]?\d?\d[xe]\d\d([xe]\d\d)?", item):
+        if standardSeasonFormat and re.search('[s]?(\d?\d)[xe](\d\d)(?:[xe](\d\d))?',item):
             tmpregex = re.search('[s]?(\d?\d)[xe](\d\d)(?:[xe](\d\d))?',item)
             detected['Season'].append(int(tmpregex.group(1)))
             detected['Episode'].append(int(tmpregex.group(2)))
@@ -1279,14 +1324,14 @@ def parseFileName(filename, isShow=False):
             continue
         
         # Found a 4 digits number, probably Year
-        if re.match("\d\d\d\d", item):
+        if re.match("^\W?\d\d\d\d\W?$", item):
             detected['Year'].append(item)
             endOfName = 1
             continue
 
         # Found a 3 digits number
-        if len(detected['ShowName'])>0 and not standardSeasonFormat and re.match("\d\d\d", item):
-            tmpregex = re.search('(\d)(\d\d)',item)
+        if len(detected['ShowName'])>0 and not standardSeasonFormat and re.match("^\W?\d\d\d\W?$", item):
+            tmpregex = re.search('^\W?(\d)(\d\d)\W?$',item)
             detected['Season'].append(int(tmpregex.group(1)))
             detected['Episode'].append(int(tmpregex.group(2)))
             endOfName = 1
@@ -1319,7 +1364,7 @@ def parseFileName(filename, isShow=False):
             continue
             
         # 2CDs video found
-        if re.match("cd\d", item) or re.match("\dcd", item):
+        if re.match("^\W?cd\d\d?\W?$", item) or re.match("^\W?\dcd\W?$", item):
             detected['Quality'].append('2cd')
             detected['Quality'].append(item)
             endOfName = 1
@@ -1348,8 +1393,10 @@ def parseFileName(filename, isShow=False):
     
     if (not detected['Season'] and len(detected['Year'])>1) or (isShow and not detected['Season'] and detected['Year']):
         item=detected['Year'].pop()
-        detected['Season'].append(int(re.sub("(\d\d)(\d\d)", '\\1', item)))
-        detected['Episode'].append(int(re.sub("(\d\d)(\d\d)", '\\2', item)))
+        print(item)
+        m = re.match("^\W?(\d\d)(\d\d)\W?$", item)
+        detected['Season'].append(int(m.group(1)))
+        detected['Episode'].append(int(m.group(2)))
         
     return detected
     
@@ -1591,7 +1638,12 @@ def ltvdownloader(videosQ):
 
             if Debug > 2:
                 local.output+='------------------\n'
-
+            
+            if not loggedIn:
+                if Debug > -1:
+                    local.output+='Not logged in, skipping searching for new subtitles\n'
+                continue
+            
             subtitle = ltv.search(parsedShow)
             
             if not subtitle:
@@ -1617,6 +1669,7 @@ def ltvdownloader(videosQ):
                 continue
                 
             if not ltv.download(subtitle):
+                local.output+='. Failed to download subtitle, retrying in 3s\n'
                 time.sleep(random.uniform(1.0, 4.0))
                 if not ltv.download(subtitle):
                     if Debug > -1:
@@ -1632,11 +1685,11 @@ def ltvdownloader(videosQ):
             continue
 
 
-        except (queue.Empty):
+        except (Empty):
             #print('Waiting for jobs for '+str(threading.current_thread().getName()))
             if Done:
                 return
-            time.sleep(random.uniform(1.0, 4.0))
+            time.sleep(random.uniform(0.5, 1.0))
             pass
         except:
             print('print_exc():')
@@ -1677,19 +1730,21 @@ if __name__ == '__main__':
     
     statistics={'Videos':0, 'NotVideos':0, 'Folders':0, 'Shows':0, 'Movies':0, 'Failed':0, 'Errors':0, 'Best':0, 'DL':0, 'Upg':0, 'NoBest':0, 'NoSubs':0, 'PT':0, 'BR':0, 'EN':0}
 
-
+    loggedIn = False
     ltv = LegendasTV(ltv_username, ltv_password)
 
     if not OnlyIMDBRating:
         if Debug > -1:
             print('Logging in Legendas.TV')
-        if not ltv.login():
+        if ltv.login():
+            loggedIn = True
+            if Debug > 0:
+                print('Logged with success!')
+        else:
             if Debug > -1:
-                print('Press any key to exit...')
-            junk = getch()
-            sys.exit()
-        if Debug > 0:
-            print('Logged with success!')
+                print('Failed to Log In. Is the website Up?')
+            Done=True
+            
 
     input_string = sys.argv[1:]
 
@@ -1699,11 +1754,11 @@ if __name__ == '__main__':
     # Mark where the original input ends
     input_string.append("-OI")
 
-    videosQ = queue.Queue()
+    videosQ = Queue()
 
     # Start worker threads here
     for i in range(thread_count):
-        t = threading.Thread(target=ltvdownloader, args = (videosQ,), daemon=True)
+        t = threading.Thread(target=ltvdownloader, args = (videosQ,) ) #, daemon=True)
         t.start()
 
 
@@ -1719,6 +1774,9 @@ if __name__ == '__main__':
         
         if Done: # Signal received
             break
+
+        if (sys.version_info < (3, 0)):
+            originalFilename = originalFilename.decode(sys.getfilesystemencoding(), "ignore")
 
         # Flag to remove garbage from filename in this item
         clean_name = clean_original_filename
@@ -1741,9 +1799,16 @@ if __name__ == '__main__':
             OnlyIMDBRating = True
             continue
 
-        if originalFilename == '-s':
-            silentMode = True
-            getch = None
+        if originalFilename == '-s': # silentMode
+            getch = lambda:None
+            continue
+
+        if originalFilename == '-d':
+            Debug = 2
+            continue
+
+        if originalFilename == '-dd':
+            Debug = 4
             continue
 
 
@@ -1818,7 +1883,7 @@ if __name__ == '__main__':
             videosQ.put(os.path.abspath(originalFilename))
 
     while not videosQ.empty():
-        time.sleep(1)
+        time.sleep(2)
 
     videosQ.join()
     Done=True
@@ -1826,8 +1891,8 @@ if __name__ == '__main__':
     if Debug > 2:
         print('------------------')
     
-    
-    ltv.logout()
+    if loggedIn:
+        ltv.logout()
     
     if Debug > -1:
         
